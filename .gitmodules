@@ -1,0 +1,3 @@
+[submodule "development/.cursor"]
+	path = development/.cursor
+	url = https://github.com/barriofarmacl/barriofarma-methodology.git
