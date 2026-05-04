@@ -9,6 +9,15 @@ development/*
 !development/installer.py
 !development/apps-example.json
 !development/vscode-example/
+!development/.cursor
+!development/sii/
+!development/scripts/
+
+# Contenido histórico local (no submodule)
+development/.cursor/docs/chat_session/
+development/.cursor/docs/backlog/
+development/.cursor/docs/user_stories/
+development/.cursor/docs/meetings/
 
 # Pycharm
 .idea
@@ -28,3 +37,6 @@ venv
 
 # NodeJS
 node_modules
+
+# UAT: parche local con IP/host de VPS y Redis externos (ver k8s/overlays/uat/configmap-external.example.yaml)
+k8s/overlays/uat/configmap-external.yaml

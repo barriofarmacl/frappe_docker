@@ -1,0 +1,20 @@
+# Autorizaciones SII (CAF + material criptográfico del contribuyente). No commitear.
+Folios*.xml
+FoliosSII*.xml
+*.p12
+*.pfx
+*.pem
+Firma*.txt
+SIISetDePruebas*.txt
+
+# Salidas y snapshots de certificación (reproducibles desde los scripts).
+out_*/
+*_testpfx/
+*Zone.Identifier
+envio_boleta_*.xml
+BOLETASIGNED*.xml
+diag_boleta/
+
+# Binarios de referencia local (no necesarios para reproducir scripts).
+*.pdf
+*.zip

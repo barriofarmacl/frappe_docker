@@ -6,11 +6,37 @@ Este directorio contiene las herramientas y configuración para el entorno de de
 
 - `.cursor/`: **Git submodule** → [barriofarma-methodology](https://github.com/barriofarmacl/barriofarma-methodology) (reglas, docs, `openspec/`, `.agents/`, `.atl/`). Tras clonar: `git submodule update --init --recursive`. Onboarding: `.cursor/docs/submodule_onboarding.md`.
 - **Documentación de apoyo del monorepo** (topología repos, PRDs, sprint-artifacts, `bf_docs`, etc.): ya no se mantiene en rutas bajo `development/`; el volcado está en **Engram** (proyecto `barriofarma`, claves `topic_key` tipo `archive/docs/...` / `archive/bf_docs/...`). Recuperar con `engram search "<término>" --project barriofarma` o MCP `mem_search`.
-- `e2e/barriofarma-cypress/`: plantilla para publicar `barriofarma-e2e`.
+- `barriofarma-e2e/`: repositorio Git **independiente** (Cypress); no forma parte del commit del fork `frappe_docker`. Ver sección "Repos satélite".
+- `sii/`: scripts de apoyo certificación SII (envío, RCOF, validación XSD). Versionado en el fork vía allowlist en `.gitignore` raíz. Ver `sii/README.md`.
+- `scripts/`: scripts de desarrollo bajo `development/scripts/` (versionados en el fork si existen).
 - `installer.py`: Script para inicializar el bench de Frappe y crear sitios
 - `apps-example.json`: Configuración de apps a instalar (ERPNext, barriofarma_app)
 - `vscode-example/`: Configuración de VSCode para debugging y tareas
-- `frappe-bench/`: Bench generado por el installer (no versionado, gitignored)
+- `frappe-bench/`: Bench generado por el installer (no versionado en el fork; cada app bajo `apps/` es clon de su propio remoto)
+
+## Git en el fork `frappe_docker` (raíz del repo)
+
+El directorio `development/` vive **dentro** del fork `barriofarmacl/frappe_docker` (raíz del clon, p. ej. `/workspace`). Git sube desde aquí hasta esa raíz.
+
+- **`main`**: línea sincronizada con **`upstream/main`** (`frappe/frappe_docker`). Actualizar con `git fetch upstream` y merge (o rebase según política del equipo) desde `upstream/main`.
+- **`barriofarma/develop`** (u otra rama larga acordada): trabajo diario BarrioFarma (compose, `installer`, JSON de apps, `development/sii`, bump del submódulo `.cursor`). Integrar cambios de `main` periódicamente para no diverger de Frappe.
+
+## Guardar avances (orden recomendado)
+
+Ejecutar en este orden antes de considerar la sesión cerrada en todos los repos:
+
+| Paso | Ubicación | Acción |
+|------|-----------|--------|
+| A | `frappe-bench/apps/pagosbf` | `git status`, commit, push a `origin` (rama del equipo). |
+| B | `frappe-bench/apps/barriofarma_app` | Igual. |
+| C | `development/.cursor` | Commit de OpenSpec/reglas; push al remoto del submódulo (`barriofarma-methodology`). |
+| D | Raíz del fork (`frappe_docker`) | Commit de cambios bajo `development/` permitidos por `.gitignore`, **incluido** el puntero al submódulo tras (C). |
+| E | Rama de trabajo | Push de `barriofarma/develop` (o la rama larga usada); abrir PR interno si aplica. |
+
+## Repos satélite
+
+- **`barriofarma-e2e`**: típicamente remoto propio (organización BarrioFarma). Rama de trabajo acordada con el equipo QA. Los tests apuntan a la URL del sitio levantado con el bench (p. ej. `barriofarma.localhost` o entorno CI). No se incluye en el índice del fork porque `development/*` solo allowlista rutas explícitas (`sii/`, `scripts/`, `.cursor`, etc.).
+- **`pagosbf`** y **`barriofarma_app`**: remotos `barriofarmacl/pagosbf` y el repo de la app de sitio; el fork solo referencia versiones vía `apps-*.json` / proceso de instalación, no duplica el código de las apps.
 
 ## Setup Inicial
 
