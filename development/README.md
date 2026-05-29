@@ -105,6 +105,16 @@ Por defecto, el installer instala las apps definidas en `apps-example.json`:
 - **ERPNext**: Versión 15 (rama `version-15`)
 - **barriofarma_app**: Rama `development`
 
+### ERPNext 16 (bench paralelo)
+
+Para evaluar Frappe/ERPNext 16 **sin modificar** `frappe-bench/`:
+
+- Manifest: `apps-erp16-barriofarma.json`
+- Runbook: `.cursor/docs/development/dev_erpnext_v16_parallel_bench.md`
+- Change OpenSpec: `.cursor/openspec/changes/erpnext-v16-platform-upgrade/`
+
+UAT 2.0 permanece en v15 hasta cutover explícito documentado en el change.
+
 ## Integración con Docker
 
 El installer está diseñado para trabajar con servicios Docker:

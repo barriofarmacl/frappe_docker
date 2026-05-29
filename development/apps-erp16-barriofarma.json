@@ -1,0 +1,14 @@
+[
+  {
+    "url": "https://github.com/frappe/erpnext.git",
+    "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/barriofarmacl/barriofarma_app.git",
+    "branch": "dev"
+  },
+  {
+    "url": "https://github.com/barriofarmacl/pagosbf.git",
+    "branch": "develop"
+  }
+]
