@@ -1,0 +1,14 @@
+# Override para POC UAT local (WSL) en paralelo al devcontainer de desarrollo.
+# Puertos host: ver DB_LOCAL_PORT y FRONTEND_BIND_PORT en .env.uat-local (default 13307 / 18080).
+# Devcontainer suele usar docker-compose.barriofarma.dev-ports.yml (3307 / 8080).
+#
+# Uso: ./scripts/up-uat-local.sh up -d
+
+services:
+  backend:
+    networks:
+      - frappe_network
+    environment:
+      OTEL_SDK_DISABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      METRICS_ENABLED: "false"

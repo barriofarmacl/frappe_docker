@@ -1,0 +1,22 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # URL del servidor ACME de Let's Encrypt (Production)
+    server: https://acme-v02.api.letsencrypt.org/directory
+    
+    # Email para notificaciones de renovación y expiración
+    email: eduardo.araya@barriofarma.cl  # Cambiar por tu email real
+    
+    # Clave privada para la cuenta ACME
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    
+    # Solvers para el desafío HTTP-01
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+

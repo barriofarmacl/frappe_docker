@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: barriofarma-metrics
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: monitoring
+    release: prometheus  # Para que Prometheus lo descubra automáticamente
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: barriofarma
+      app.kubernetes.io/component: backend
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'barriofarma_.*'
+      action: keep
+    - sourceLabels: [__name__]
+      regex: 'frappe_.*'
+      action: keep
+    - sourceLabels: [__name__]
+      regex: 'http_.*'
+      action: keep
+    - sourceLabels: [__name__]
+      regex: 'python_.*'
+      action: keep

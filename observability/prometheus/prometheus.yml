@@ -1,0 +1,64 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'barriofarma-dev'
+    environment: 'development'
+
+scrape_configs:
+  # BarrioFarma Application Metrics
+  # Nota: El backend necesita tener el endpoint /metrics habilitado
+  # y el puerto 9090 expuesto para que esto funcione
+  - job_name: 'barriofarma-backend'
+    scrape_interval: 15s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backend:9090']
+        labels:
+          service: 'barriofarma-backend'
+          component: 'application'
+
+  # OpenTelemetry Collector Metrics
+  - job_name: 'otel-collector'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['otel-collector:8889']
+        labels:
+          service: 'otel-collector'
+          component: 'observability'
+
+  # Prometheus Self-Monitoring
+  - job_name: 'prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # MariaDB Exporter
+  - job_name: 'mariadb'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['mariadb-exporter:9104']
+        labels:
+          service: 'mariadb'
+          component: 'database'
+          instance: 'barriofarma-db'
+
+  # Redis Cache Exporter
+  - job_name: 'redis-cache'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['redis-exporter-cache:9121']
+        labels:
+          service: 'redis-cache'
+          component: 'cache'
+          instance: 'barriofarma-redis-cache'
+
+  # Redis Queue Exporter
+  - job_name: 'redis-queue'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['redis-exporter-queue:9121']
+        labels:
+          service: 'redis-queue'
+          component: 'queue'
+          instance: 'barriofarma-redis-queue'

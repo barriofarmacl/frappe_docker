@@ -1,0 +1,129 @@
+# ============================================================================
+# Patch de Node Affinity para PVCs RWO Compartidos
+# ============================================================================
+#
+# ESTADO: DESHABILITADO (comentado en kustomization.yaml)
+#
+# ¿CUÁNDO USAR ESTE PATCH?
+# Solo cuando se cumplen TODAS estas condiciones:
+# 1. Cluster con MÚLTIPLES nodos (2+)
+# 2. PVCs configurados como ReadWriteOnce (RWO)
+# 3. Múltiples pods necesitan montar los MISMOS PVCs
+#
+# CONFIGURACIÓN ACTUAL POR AMBIENTE:
+#
+# DEV:
+#   ❌ NO USAR - 1 nodo (e2-standard-8)
+#   - Sin problema de Multi-Attach
+#   - Todos los pods van al mismo nodo automáticamente
+#
+# STAGING/PRODUCTION:
+#   ❌ NO USAR - Usar persistencia RWX o servicios gestionados
+#   Opciones recomendadas:
+#   A) Cloud SQL + Memorystore (sin PVCs compartidos)
+#   B) PVCs ReadWriteMany (RWX) con Filestore GCP
+#   C) PVCs ReadWriteMany (RWX) con NFS
+#
+# ALTERNATIVA TEMPORAL (solo si es necesario):
+#   ✅ USAR este patch si temporalmente necesitas:
+#   - Múltiples nodos + PVCs RWO compartidos
+#   - El nodo debe tener label: barriofarma/shared-storage=true
+#   - Terraform ya configura este label en todos los nodos
+#
+# ============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barriofarma-backend
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barriofarma-frontend
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barriofarma-websocket
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barriofarma-scheduler
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barriofarma-queue-long
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barriofarma-queue-short
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: barriofarma-configurator
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: barriofarma-create-site
+  namespace: barriofarma
+spec:
+  template:
+    spec:
+      nodeSelector:
+        barriofarma/shared-storage: "true"

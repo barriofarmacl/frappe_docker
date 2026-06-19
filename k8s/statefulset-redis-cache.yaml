@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cache
+  namespace: barriofarma
+  labels:
+    app: redis-cache
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: cache
+spec:
+  serviceName: redis-cache
+  replicas: 1  # Para dev/staging, 1 réplica es suficiente
+  
+  selector:
+    matchLabels:
+      app: redis-cache
+  
+  template:
+    metadata:
+      labels:
+        app: redis-cache
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.4-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+          protocol: TCP
+        
+        # Configuración de Redis Cache con eviction policy (desde Session 0030)
+        command:
+        - redis-server
+        args:
+        - --appendonly
+        - "yes"
+        - --appendfsync
+        - "everysec"
+        - --maxmemory
+        - "512mb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        - --save
+        - ""
+        
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+          failureThreshold: 3
+  
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+      labels:
+        app: redis-cache
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "standard-rwo"  # Disco persistente estándar de GKE
+      resources:
+        requests:
+          storage: 5Gi  # 5GB para cache en dev/staging
+

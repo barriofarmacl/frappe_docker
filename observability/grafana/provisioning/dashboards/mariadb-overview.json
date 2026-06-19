@@ -1,0 +1,423 @@
+{
+  "title": "MariaDB - Overview",
+  "tags": [
+    "mariadb",
+    "database",
+    "barriofarma"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 27,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Queries per Second",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(mysql_global_status_queries{instance=\"barriofarma-db\"}[1m])",
+          "legendFormat": "Queries/sec",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "yaxes": [
+        {
+          "format": "ops",
+          "label": "Queries/sec"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Active Connections",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "mysql_global_status_threads_connected{instance=\"barriofarma-db\"}",
+          "legendFormat": "Connected Threads",
+          "refId": "A"
+        },
+        {
+          "expr": "mysql_global_variables_max_connections{instance=\"barriofarma-db\"}",
+          "legendFormat": "Max Connections",
+          "refId": "B"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Connections"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Slow Queries",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(mysql_global_status_slow_queries{instance=\"barriofarma-db\"}[1m])",
+          "legendFormat": "Slow Queries/sec",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "yaxes": [
+        {
+          "format": "ops",
+          "label": "Slow Queries/sec"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "alert": {
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [
+                1
+              ],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": [
+                "A",
+                "5m",
+                "now"
+              ]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "execution": {
+          "alertConditions": [],
+          "actions": [],
+          "noDataState": "no_data",
+          "for": "5m"
+        },
+        "frequency": "10s",
+        "handler": 1,
+        "name": "High Slow Query Rate",
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "InnoDB Buffer Pool Usage",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "mysql_global_status_innodb_buffer_pool_pages_total{instance=\"barriofarma-db\"} * mysql_global_variables_innodb_page_size{instance=\"barriofarma-db\"}",
+          "legendFormat": "Total Buffer Pool",
+          "refId": "A"
+        },
+        {
+          "expr": "mysql_global_status_innodb_buffer_pool_pages_data{instance=\"barriofarma-db\"} * mysql_global_variables_innodb_page_size{instance=\"barriofarma-db\"}",
+          "legendFormat": "Data Pages",
+          "refId": "B"
+        },
+        {
+          "expr": "mysql_global_status_innodb_buffer_pool_pages_free{instance=\"barriofarma-db\"} * mysql_global_variables_innodb_page_size{instance=\"barriofarma-db\"}",
+          "legendFormat": "Free Pages",
+          "refId": "C"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "yaxes": [
+        {
+          "format": "bytes",
+          "label": "Buffer Pool Size"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Query Latency (p95)",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(mysql_global_status_queries{instance=\"barriofarma-db\"}[5m]))",
+          "legendFormat": "p95 Latency",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "yaxes": [
+        {
+          "format": "s",
+          "label": "Latency"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Connection Usage Percentage",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "(mysql_global_status_threads_connected{instance=\"barriofarma-db\"} / mysql_global_variables_max_connections{instance=\"barriofarma-db\"}) * 100",
+          "legendFormat": "Connection Usage",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "options": {
+        "min": 0,
+        "max": 100,
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "value": 0,
+              "color": "green"
+            },
+            {
+              "value": 70,
+              "color": "yellow"
+            },
+            {
+              "value": 85,
+              "color": "red"
+            }
+          ]
+        }
+      },
+      "alert": {
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [
+                85
+              ],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": [
+                "A",
+                "5m",
+                "now"
+              ]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "execution": {
+          "alertConditions": [],
+          "actions": [],
+          "noDataState": "no_data",
+          "for": "5m"
+        },
+        "frequency": "10s",
+        "handler": 1,
+        "name": "High Connection Usage",
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "InnoDB Buffer Pool Hit Ratio",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(1 - (mysql_global_status_innodb_buffer_pool_reads{instance=\"barriofarma-db\"} / mysql_global_status_innodb_buffer_pool_read_requests{instance=\"barriofarma-db\"})) * 100",
+          "legendFormat": "Hit Ratio",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "value": 0,
+              "color": "red"
+            },
+            {
+              "value": 95,
+              "color": "yellow"
+            },
+            {
+              "value": 99,
+              "color": "green"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Uptime",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "mysql_global_status_uptime{instance=\"barriofarma-db\"}",
+          "legendFormat": "Uptime (seconds)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Table Locks",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(mysql_global_status_table_locks_waited{instance=\"barriofarma-db\"}[1m])",
+          "legendFormat": "Table Locks Waited/sec",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "yaxes": [
+        {
+          "format": "ops",
+          "label": "Locks/sec"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "InnoDB Log Waits",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(mysql_global_status_innodb_log_waits{instance=\"barriofarma-db\"}[1m])",
+          "legendFormat": "Log Waits/sec",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "yaxes": [
+        {
+          "format": "ops",
+          "label": "Waits/sec"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "id": null,
+  "uid": "mariadb-overview"
+}

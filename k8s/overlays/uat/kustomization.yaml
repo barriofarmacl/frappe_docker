@@ -1,0 +1,355 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Build: kubectl kustomize --load-restrictor=LoadRestrictionsNone .
+# Apply: kubectl kustomize --load-restrictor=LoadRestrictionsNone . | kubectl apply -f -
+#
+# Obligatorio antes del build: archivo configmap-external.yaml (no versionado).
+# Generar con scripts/prepare-uat-external-config.sh o copiar desde configmap-external.example.yaml
+# Redis: en cluster (StatefulSets). MariaDB: fuera del cluster (VM / VPS); DB_HOST en configmap-external.
+
+# Namespace UAT (transforma metadata.namespace y el recurso Namespace)
+namespace: barriofarma-uat
+
+resources:
+  - ../../namespace.yaml
+  - ../../configmap.yaml
+  - ../../configmap-frappe-headers.yaml
+  - ../../secret.yaml
+  - ../../pvc.yaml
+  - ../../statefulset-redis-cache.yaml
+  - ../../statefulset-redis-queue.yaml
+  - ../../job-configurator.yaml
+  - ../../job-create-site.yaml
+  - ../../deployment.yaml
+  - ../../deployment-frontend.yaml
+  - ../../deployment-websocket.yaml
+  - ../../deployment-scheduler.yaml
+  - ../../deployment-queue-short.yaml
+  - ../../deployment-queue-long.yaml
+  - ../../service.yaml
+  - ../../ingress.yaml
+
+# Imagen congelada UAT (GCR proyecto barriofarma-uat-cl)
+images:
+  - name: gcr.io/barriofarma-dev/bf-app-dev
+    newName: gcr.io/barriofarma-uat-cl/bf-app-uat
+    newTag: 0.0.3-uat
+
+# service.yaml incluye MariaDB (sin workload en UAT) y Redis en cluster: se elimina solo el Service mariadb.
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: mariadb
+    target:
+      kind: Service
+      name: mariadb
+
+patchesStrategicMerge:
+  # Servicios de aplicacion (misma forma que base; namespace resuelto por overlay)
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: barriofarma-backend-service
+      namespace: barriofarma
+    spec:
+      selector:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: backend
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: barriofarma-frontend-service
+      namespace: barriofarma
+    spec:
+      selector:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: frontend
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: barriofarma-websocket-service
+      namespace: barriofarma
+    spec:
+      selector:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: websocket
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: redis-cache
+      namespace: barriofarma
+    spec:
+      selector:
+        app: redis-cache
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: redis-queue
+      namespace: barriofarma
+    spec:
+      selector:
+        app: redis-queue
+  # Redis: toleran taint barriofarma.uat/redis-only (ver DEPLOY_UAT.md). Asi el segundo nodo puede
+  # dedicarse a Redis y el pool default no coloca Frappe/backend en el mismo nodo sin los PVC RWO.
+  # Menos CPU request para nodos pequeños.
+  - |-
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: redis-cache
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          tolerations:
+            - key: barriofarma.uat/redis-only
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
+          containers:
+            - name: redis
+              resources:
+                requests:
+                  cpu: "25m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "1Gi"
+  - |-
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: redis-queue
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          tolerations:
+            - key: barriofarma.uat/redis-only
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
+          containers:
+            - name: redis
+              resources:
+                requests:
+                  cpu: "25m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "1Gi"
+  # Jobs y Deployments con PVC RWO (sites/logs): nodeSelector al nodo etiquetado con
+  # barriofarma.uat/pvc-node=true. Determinista: no depende de que otros pods esten Running.
+  # Si el Job ya existe: kubectl delete job ... antes de re-aplicar.
+  - |-
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: barriofarma-create-site
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+            - name: create-site
+              resources:
+                requests:
+                  cpu: "25m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "2000m"
+                  memory: "4Gi"
+  - |-
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: barriofarma-configurator
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+            - name: configurator
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-backend
+      namespace: barriofarma
+    spec:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+          - name: backend
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "150m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+            readinessProbe:
+              httpGet:
+                path: /api/method/ping
+                port: 8000
+                httpHeaders:
+                - name: X-Frappe-Site-Name
+                  value: frontend
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-frontend
+      namespace: barriofarma
+    spec:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+          - name: frontend
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "50m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-websocket
+      namespace: barriofarma
+    spec:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+          - name: websocket
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-scheduler
+      namespace: barriofarma
+    spec:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+          - name: scheduler
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "50m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-queue-short
+      namespace: barriofarma
+    spec:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+          - name: queue-short
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-queue-long
+      namespace: barriofarma
+    spec:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+      template:
+        spec:
+          nodeSelector:
+            barriofarma.uat/pvc-node: "true"
+          containers:
+          - name: queue-long
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+  # Ultimo: DB fuera del cluster; Redis en cluster (redis-cache / redis-queue en este namespace)
+  - configmap-external.yaml

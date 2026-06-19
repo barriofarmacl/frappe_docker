@@ -1,0 +1,311 @@
+# ============================================================================
+# Docker Compose para BarrioFarma con Imagen bf-app-uat:0.0.7-uat
+# ============================================================================
+# Basado en pwd.yml pero adaptado para:
+# - MariaDB 11.8 como motor principal
+# - Imagen personalizada bf-app-uat:0.0.7-uat
+# - Puerto 3306 expuesto para DBeaver
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # MariaDB Database
+  # ==========================================================================
+  db:
+    image: mariadb:11.8
+    networks:
+      - frappe_network
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-uroot", "-pbfdb123"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --innodb-log-file-size=512M
+      - --innodb-file-per-table=1
+      - --innodb-flush-log-at-trx-commit=1
+    environment:
+      MYSQL_ROOT_PASSWORD: bfdb123
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - db-data:/var/lib/mysql
+    # Sin ports aqui: compose concatena listas al mezclar overrides (UAT quedaba con 0.0.0.0:3307 + 127.0.0.1:13307).
+    # Desarrollo local: docker compose -f docker-compose.barriofarma.yml -f docker-compose.barriofarma.dev-ports.yml up -d
+
+  # ==========================================================================
+  # Redis Cache
+  # ==========================================================================
+  redis-cache:
+    image: redis:7.2-alpine
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command: redis-server /etc/redis-cache.conf
+    volumes:
+      - redis-cache-data:/data
+      - ./config/redis-cache.conf:/etc/redis-cache.conf:ro
+
+  # ==========================================================================
+  # Redis Queue
+  # ==========================================================================
+  redis-queue:
+    image: redis:7.2-alpine
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command: redis-server /etc/redis-queue.conf
+    volumes:
+      - redis-queue-data:/data
+      - ./config/redis-queue.conf:/etc/redis-queue.conf:ro
+
+  # ==========================================================================
+  # Configurator - Inicializa common_site_config.json
+  # ==========================================================================
+  configurator:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: none
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: "9000"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+
+  # ==========================================================================
+  # Create Site - Crea el sitio barriofarma.localhost
+  # ==========================================================================
+  create-site:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: none
+    depends_on:
+      - configurator
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        wait-for-it -t 120 db:3306;
+        wait-for-it -t 120 redis-cache:6379;
+        wait-for-it -t 120 redis-queue:6379;
+        export start=`date +%s`;
+        until [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".db_host // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_cache // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_queue // empty"` ]];
+        do
+          echo "Waiting for sites/common_site_config.json to be created";
+          sleep 5;
+          if (( `date +%s`-start > 120 )); then
+            echo "could not find sites/common_site_config.json with required keys";
+            exit 1
+          fi
+        done;
+        echo "sites/common_site_config.json found";
+        bench new-site --db-type mariadb --mariadb-user-host-login-scope='%' --admin-password=admin --db-root-username=root --db-root-password=bfdb123 --install-app erpnext --install-app barriofarma_app --set-default frontend;
+        bench --site frontend set-config host_name localhost;
+        bench --site frontend set-config nginx_port 8080;
+        bench --site frontend set-config socketio_port 8080;
+        bench --site frontend set-config socketio_host localhost;
+        bench --site frontend set-config use_ssl 0;
+        bench --site frontend clear-cache;
+
+  # ==========================================================================
+  # Backend - Servidor Gunicorn
+  # ==========================================================================
+  backend:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+      - observability_network
+    depends_on:
+      - create-site
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+      # OpenTelemetry Configuration
+      OTEL_SERVICE_NAME: barriofarma-backend
+      OTEL_SERVICE_VERSION: 0.0.3-uat
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: service.name=barriofarma-backend,service.version=0.0.3-uat,deployment.environment=development
+      # Prometheus Metrics
+      METRICS_ENABLED: "true"
+      METRICS_PORT: "9090"
+
+  # ==========================================================================
+  # Frontend - Nginx
+  # ==========================================================================
+  frontend:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+    depends_on:
+      - backend
+      - websocket
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      FRAPPE_SITE_NAME_HEADER: frontend
+      SOCKETIO: websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    # Sin ports: ver docker-compose.barriofarma.dev-ports.yml (evita doble bind con docker-compose.uat-vps.yml).
+
+  # ==========================================================================
+  # WebSocket - SocketIO
+  # ==========================================================================
+  websocket:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+    depends_on:
+      - create-site
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+
+  # ==========================================================================
+  # Scheduler - Tareas programadas
+  # ==========================================================================
+  scheduler:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+    depends_on:
+      - create-site
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - bench
+      - schedule
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+
+  # ==========================================================================
+  # Queue Workers
+  # ==========================================================================
+  queue-short:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+    depends_on:
+      - create-site
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+
+  queue-long:
+    image: APP_IMAGE
+    networks:
+      - frappe_network
+    depends_on:
+      - create-site
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - bench
+      - worker
+      - --queue
+      - long,default,short
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  db-data:
+  redis-cache-data:
+  redis-queue-data:
+  sites:
+  logs:
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  frappe_network:
+    driver: bridge
+  # Mismo name que observability/; sin external para que compose cree la red si no existe (p. ej. UAT VPS).
+  observability_network:
+    driver: bridge
+    name: observability_observability_network
+

@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: barriofarma-drop-site
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: drop-site
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: drop-site
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cloud-sql-proxy
+        image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.0
+        command:
+          - "/cloud-sql-proxy"
+          - "--port=3306"
+          - "--address=127.0.0.1"
+          - "barriofarma-dev:us-central1:barriofarma-dev-db"
+        securityContext:
+          runAsNonRoot: true
+      - name: drop-site
+        image: gcr.io/barriofarma-dev/bf-app-dev:0.0.2-dev
+        command:
+        - bash
+        - -c
+        - |
+          until timeout 1 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/3306" 2>/dev/null; do sleep 2; done;
+          bench drop-site frontend --force --no-backup || echo "Site eliminado o no existe";
+        volumeMounts:
+        - name: sites-data
+          mountPath: /home/frappe/frappe-bench/sites
+      volumes:
+      - name: sites-data
+        persistentVolumeClaim:
+          claimName: barriofarma-sites-pvc
+

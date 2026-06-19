@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: barriofarma-grant-permissions
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: grant-permissions
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: grant-permissions
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cloud-sql-proxy
+        image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.0
+        command:
+          - "/cloud-sql-proxy"
+          - "--port=3306"
+          - "--address=127.0.0.1"
+          - "barriofarma-dev:us-central1:barriofarma-dev-db"
+        securityContext:
+          runAsNonRoot: true
+      - name: grant-permissions
+        image: mariadb:11.8
+        command:
+        - bash
+        - -c
+        - |
+          echo "Esperando Cloud SQL Proxy...";
+          sleep 5;
+          until timeout 1 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/3306" 2>/dev/null; do sleep 1; done;
+          echo "Otorgando permisos completos a barriofarma...";
+          mariadb -h 127.0.0.1 -u root -pbfdb123 <<'SQL'
+          GRANT ALL PRIVILEGES ON *.* TO 'barriofarma'@'%' WITH GRANT OPTION;
+          FLUSH PRIVILEGES;
+          SQL
+          echo "Verificando permisos...";
+          mariadb -h 127.0.0.1 -u barriofarma -pbfdb123 -e "SHOW GRANTS FOR 'barriofarma'@'%';";
+          echo "✅ Permisos otorgados exitosamente";
+        env:
+        - name: DB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: barriofarma-secrets
+              key: DB_ROOT_PASSWORD
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: barriofarma-secrets
+              key: DB_PASSWORD
+

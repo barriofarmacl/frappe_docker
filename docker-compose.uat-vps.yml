@@ -1,0 +1,81 @@
+x-app-image: &app_image "${APP_IMAGE:-gcr.io/barriofarma-uat-cl/bf-app-uat:0.0.7-uat}"
+
+services:
+  db:
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in .env.uat-vps}"
+    ports:
+      - "127.0.0.1:${DB_LOCAL_PORT:-13307}:3306"
+    restart: unless-stopped
+
+  redis-cache:
+    restart: unless-stopped
+
+  redis-queue:
+    restart: unless-stopped
+
+  configurator:
+    image: *app_image
+    restart: "no"
+
+  create-site:
+    image: *app_image
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
+      configurator:
+        condition: service_started
+    volumes:
+      - ./scripts/create-site-if-needed.sh:/opt/barriofarma/scripts/create-site-if-needed.sh:ro
+    entrypoint:
+      - /bin/bash
+      - /opt/barriofarma/scripts/create-site-if-needed.sh
+    command: []
+    environment:
+      DB_ROOT_USERNAME: "${DB_ROOT_USERNAME:-root}"
+      DB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in .env.uat-vps}"
+      SITE_NAME: "${SITE_NAME:-frontend}"
+      SITE_HOSTNAME: "${SITE_HOSTNAME:?Set SITE_HOSTNAME in .env.uat-vps}"
+      SITE_PROTOCOL: "${SITE_PROTOCOL:-https}"
+      SITE_USE_SSL: "${SITE_USE_SSL:-1}"
+      SITE_SOCKETIO_PORT: "${SITE_SOCKETIO_PORT:-443}"
+      SITE_ADMIN_PASSWORD: "${SITE_ADMIN_PASSWORD:?Set SITE_ADMIN_PASSWORD in .env.uat-vps}"
+      SITE_DB_PASSWORD: "${SITE_DB_PASSWORD:-}"
+      INSTALL_APPS: "${INSTALL_APPS:-erpnext barriofarma_app}"
+
+  backend:
+    image: *app_image
+    networks:
+      - frappe_network
+    restart: unless-stopped
+    environment:
+      OTEL_SDK_DISABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      METRICS_ENABLED: "false"
+
+  frontend:
+    image: *app_image
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_BIND_PORT:-18080}:8080"
+
+  websocket:
+    image: *app_image
+    restart: unless-stopped
+
+  scheduler:
+    image: *app_image
+    restart: unless-stopped
+
+  queue-short:
+    image: *app_image
+    restart: unless-stopped
+
+  queue-long:
+    image: *app_image
+    restart: unless-stopped

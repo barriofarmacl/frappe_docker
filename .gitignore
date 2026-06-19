@@ -1,5 +1,20 @@
 # Environment Variables
 .env
+.env.*
+!*.env.example
+!.env.*.example
+
+# TLS / Cloud SQL client certs (never commit; rotate in GCP if exposed)
+certs/*
+!certs/.gitkeep
+
+# Local tooling artifacts
+.atl/
+.engram/
+graphiti/
+
+# Accidental nested clone (infra lives in barriofarmacl/barriofarma-infrastructure)
+barriofarma-infrastructure/
 
 # mounted volume
 sites

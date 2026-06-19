@@ -1,0 +1,118 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: barriofarma-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: application
+    app.kubernetes.io/environment: staging
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/barriofarmacl/frappe_docker  # Actualizar con tu repo
+    targetRevision: barriofarma-develop  # Rama dedicada para desarrollo/staging de BarrioFarma
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: barriofarma
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: barriofarma-production
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: application
+    app.kubernetes.io/environment: production
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/barriofarmacl/frappe_docker  # Actualizar con tu repo
+    targetRevision: barriofarma-production  # Rama dedicada para producción de BarrioFarma
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: barriofarma
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: barriofarma-project
+  namespace: argocd
+spec:
+  description: BarrioFarma Application Project
+  sourceRepos:
+    - https://github.com/barriofarmacl/frappe_docker  # Actualizar con tu repo
+  destinations:
+    - namespace: barriofarma
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: ""
+      kind: PersistentVolume
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: ConfigMap
+  namespaceResourceWhitelist:
+    - group: "apps"
+      kind: Deployment
+    - group: "apps"
+      kind: ReplicaSet
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: Pod
+    - group: "networking.k8s.io"
+      kind: Ingress
+    - group: "monitoring.coreos.com"
+      kind: ServiceMonitor
+  roles:
+    - name: barriofarma-admin
+      description: BarrioFarma Admin Role
+      policies:
+        - p, proj:barriofarma-project:barriofarma-admin, applications, *, barriofarma-project/*, allow
+        - p, proj:barriofarma-project:barriofarma-admin, repositories, *, *, allow
+      groups:
+        - barriofarma-admins

@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: barriofarma-ingress
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Headers requeridos por Frappe - configurados via configuration-snippet
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header X-Frappe-Site-Name frontend;
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Real-IP $remote_addr;
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - uat.barriofarma.cl
+    secretName: barriofarma-tls
+  rules:
+  - host: uat.barriofarma.cl
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: barriofarma-backend-service
+            port:
+              number: 8000
+      - path: /socket.io
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: barriofarma-websocket-service
+            port:
+              number: 9000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: barriofarma-frontend-service
+            port:
+              number: 8080

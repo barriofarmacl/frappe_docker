@@ -1,0 +1,148 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: barriofarma-create-site
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: create-site
+    app.kubernetes.io/version: "0.0.2-dev"
+spec:
+  ttlSecondsAfterFinished: 86400  # Eliminar job después de 24 horas
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: create-site
+        app.kubernetes.io/version: "0.0.2-dev"
+    spec:
+      restartPolicy: Never
+      initContainers:
+      # Ajustar permisos de los PVCs para el usuario frappe (UID 1000)
+      - name: fix-permissions
+        image: busybox
+        securityContext:
+          runAsUser: 0
+        command: ['sh', '-c']
+        args:
+          - |
+            echo "Ajustando permisos de PVCs para usuario frappe (UID 1000)...";
+            chown -R 1000:1000 /sites /logs || true;
+            chmod -R 755 /sites /logs || true;
+            echo "Permisos ajustados";
+        volumeMounts:
+        - name: sites-data
+          mountPath: /sites
+        - name: logs-data
+          mountPath: /logs
+      # Verificar que Redis Cache está accesible
+      - name: wait-for-redis-cache
+        image: redis:7.2-alpine
+        command: ['sh', '-c', 'REDIS_HOST=$(echo $FRAPPE_REDIS_CACHE | sed "s|redis://||" | cut -d: -f1); REDIS_PORT=$(echo $FRAPPE_REDIS_CACHE | sed "s|redis://||" | cut -d: -f2); until redis-cli -h $REDIS_HOST -p $REDIS_PORT ping; do echo waiting for redis-cache; sleep 2; done;']
+        env:
+        - name: FRAPPE_REDIS_CACHE
+          valueFrom:
+            configMapKeyRef:
+              name: barriofarma-config
+              key: FRAPPE_REDIS_CACHE
+      # Verificar que Redis Queue está accesible
+      - name: wait-for-redis-queue
+        image: redis:7.2-alpine
+        command: ['sh', '-c', 'REDIS_HOST=$(echo $FRAPPE_REDIS_QUEUE | sed "s|redis://||" | cut -d: -f1); REDIS_PORT=$(echo $FRAPPE_REDIS_QUEUE | sed "s|redis://||" | cut -d: -f2); until redis-cli -h $REDIS_HOST -p $REDIS_PORT ping; do echo waiting for redis-queue; sleep 2; done;']
+        env:
+        - name: FRAPPE_REDIS_QUEUE
+          valueFrom:
+            configMapKeyRef:
+              name: barriofarma-config
+              key: FRAPPE_REDIS_QUEUE
+      # Esperar a que configurator complete: mismas claves que pwd.yml / contenedor principal
+      # (db_host, redis_cache, redis_queue en common_site_config.json).
+      - name: wait-for-configurator
+        image: gcr.io/barriofarma-dev/bf-app-dev:0.0.2-dev
+        command: ['sh', '-c', 'export start=$(date +%s); until [ -f sites/common_site_config.json ] && [ -n "$(grep -hs ^ sites/common_site_config.json | jq -r ".db_host // empty")" ] && [ -n "$(grep -hs ^ sites/common_site_config.json | jq -r ".redis_cache // empty")" ] && [ -n "$(grep -hs ^ sites/common_site_config.json | jq -r ".redis_queue // empty")" ]; do echo waiting for configurator to complete; sleep 2; elapsed=$(($(date +%s) - start)); if [ "$elapsed" -gt 300 ]; then echo "timeout waiting for configurator (need db_host, redis_cache, redis_queue)"; exit 1; fi; done; echo "configurator completed";']
+        volumeMounts:
+        - name: sites-data
+          mountPath: /home/frappe/frappe-bench/sites
+      containers:
+      - name: create-site
+        image: gcr.io/barriofarma-dev/bf-app-dev:0.0.2-dev
+        imagePullPolicy: Always
+        command:
+        - bash
+        - -c
+        - |
+          # Verificar conexión directa a MySQL 8.0 antes de crear el sitio
+          echo "Verificando conexión directa a MySQL 8.0...";
+          until mariadb --skip-ssl -h "$DB_HOST" -u barriofarma -p"$DB_PASSWORD" -e "SELECT VERSION()" >/dev/null 2>&1; do
+            echo "Esperando conexión a MySQL 8.0...";
+            sleep 2;
+          done;
+          echo "✅ Conexión directa a MySQL 8.0 verificada";
+          export start=$(date +%s);
+          until [[ -n $(grep -hs ^ sites/common_site_config.json | jq -r ".db_host // empty") ]] && \
+            [[ -n $(grep -hs ^ sites/common_site_config.json | jq -r ".redis_cache // empty") ]] && \
+            [[ -n $(grep -hs ^ sites/common_site_config.json | jq -r ".redis_queue // empty") ]];
+          do
+            echo "Waiting for sites/common_site_config.json to be created";
+            sleep 5;
+            if (( $(date +%s) - start > 120 )); then
+              echo "could not find sites/common_site_config.json with required keys";
+              exit 1
+            fi
+          done;
+          echo "sites/common_site_config.json found";
+          # Conexión directa a MySQL 8.0 (Cloud SQL con IP privada)
+          # Nota: Cloud SQL usa MySQL 8.0, pero Frappe requiere --db-type mariadb (son compatibles)
+          # Usar usuario barriofarma como "root" del proyecto (tiene permisos completos)
+          # Usar --force para sobrescribir si el sitio ya existe
+          bench new-site --force --db-type mariadb \
+            --mariadb-user-host-login-scope='%' \
+            --admin-password=admin \
+            --db-name=$DB_NAME \
+            --db-root-username=root \
+            --db-root-password=$DB_ROOT_PASSWORD \
+            --install-app erpnext \
+            --install-app barriofarma_app \
+            --set-default frontend;
+        env:
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: barriofarma-config
+              key: DB_NAME
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: barriofarma-config
+              key: DB_HOST
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: barriofarma-secrets
+              key: DB_PASSWORD
+        - name: DB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: barriofarma-secrets
+              key: DB_ROOT_PASSWORD
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: sites-data
+          mountPath: /home/frappe/frappe-bench/sites
+        - name: logs-data
+          mountPath: /home/frappe/frappe-bench/logs
+      volumes:
+      - name: sites-data
+        persistentVolumeClaim:
+          claimName: barriofarma-sites-pvc
+      - name: logs-data
+        persistentVolumeClaim:
+          claimName: barriofarma-logs-pvc
+

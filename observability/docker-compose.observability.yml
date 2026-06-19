@@ -1,0 +1,217 @@
+version: "3.8"
+
+# ============================================================================
+# Stack de Observabilidad para BarrioFarma
+# ============================================================================
+# Incluye:
+# - OpenTelemetry Collector (trazas y métricas)
+# - Prometheus (métricas)
+# - Grafana (visualización)
+# - Loki (logs)
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # OpenTelemetry Collector
+  # ==========================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: barriofarma-otel-collector
+    networks:
+      - frappe_network
+      - observability_network
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8889:8889"   # Prometheus exporter
+    deploy:
+      restart_policy:
+        condition: on-failure
+    # Healthcheck deshabilitado - OTEL Collector no tiene wget/curl por defecto
+    # El servicio funciona correctamente aunque el healthcheck falle
+
+  # ==========================================================================
+  # Prometheus
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: barriofarma-prometheus
+    networks:
+      - frappe_network
+      - observability_network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    deploy:
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Grafana
+  # ==========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: barriofarma-grafana
+    networks:
+      - observability_network
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    deploy:
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - prometheus
+      - loki
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Loki
+  # ==========================================================================
+  loki:
+    image: grafana/loki:latest
+    container_name: barriofarma-loki
+    networks:
+      - observability_network
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    deploy:
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Promtail (para recolectar logs de contenedores)
+  # ==========================================================================
+  promtail:
+    image: grafana/promtail:latest
+    container_name: barriofarma-promtail
+    networks:
+      - observability_network
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+    deploy:
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - loki
+
+  # ==========================================================================
+  # MariaDB Exporter (Prometheus)
+  # ==========================================================================
+  mariadb-exporter:
+    image: prom/mysqld-exporter:latest
+    container_name: barriofarma-mariadb-exporter
+    networks:
+      - frappe_network
+      - observability_network
+    command:
+      - '--config.my-cnf=/etc/mysqld_exporter/.my.cnf'
+    volumes:
+      - ./mariadb-exporter/.my.cnf:/etc/mysqld_exporter/.my.cnf:ro
+    deploy:
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9104/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Redis Cache Exporter (Prometheus)
+  # ==========================================================================
+  redis-exporter-cache:
+    image: oliver006/redis_exporter:latest
+    container_name: barriofarma-redis-exporter-cache
+    networks:
+      - frappe_network
+      - observability_network
+    environment:
+      REDIS_ADDR: "redis://redis-cache:6379"
+    deploy:
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9121/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Redis Queue Exporter (Prometheus)
+  # ==========================================================================
+  redis-exporter-queue:
+    image: oliver006/redis_exporter:latest
+    container_name: barriofarma-redis-exporter-queue
+    networks:
+      - frappe_network
+      - observability_network
+    environment:
+      REDIS_ADDR: "redis://redis-queue:6379"
+    deploy:
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9121/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+
+networks:
+  observability_network:
+    driver: bridge
+  frappe_network:
+    external: true
+    name: frappe_docker_frappe_network
+

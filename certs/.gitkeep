@@ -1,0 +1,9 @@
+# Directorio para certificados SSL de Cloud SQL
+# NO commitear certificados reales - solo este archivo placeholder
+#
+# Archivos esperados:
+# - server-ca.pem     (CA del servidor Cloud SQL)
+# - client-cert.pem   (Certificado del cliente)
+# - client-key.pem    (Llave privada del cliente)
+#
+# Ver HYBRID_POC_README.md para instrucciones de descarga

@@ -1,0 +1,211 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mariadb-backup
+  namespace: barriofarma
+  labels:
+    app: mariadb
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 2 * * *"  # Diario a las 2 AM UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: mariadb-backup
+        spec:
+          serviceAccountName: mariadb-backup-sa
+          initContainers:
+          - name: install-tools
+            image: google/cloud-sdk:alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Instalando mariadb-client..."
+              apk add --no-cache mariadb-client
+              cp /usr/bin/mariadb-dump /tools/mariadb-dump
+              cp /usr/bin/gsutil /tools/gsutil
+              cp -r /usr/lib/google-cloud-sdk /tools/
+              echo "Herramientas instaladas"
+            volumeMounts:
+            - name: tools
+              mountPath: /tools
+          containers:
+          - name: backup
+            image: google/cloud-sdk:alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              
+              # Variables
+              BACKUP_DIR="/backup"
+              TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+              BACKUP_FILE="${BACKUP_DIR}/backup-${TIMESTAMP}.sql.gz"
+              BUCKET_NAME="${GCS_BUCKET_NAME}"
+              BUCKET_PATH="gs://${BUCKET_NAME}/backups/mariadb/${ENVIRONMENT}"
+              
+              echo "=========================================="
+              echo "Inicio de backup de MariaDB"
+              echo "Timestamp: ${TIMESTAMP}"
+              echo "Ambiente: ${ENVIRONMENT}"
+              echo "=========================================="
+              
+              # Crear directorio de backup si no existe
+              mkdir -p ${BACKUP_DIR}
+              
+              # Instalar mariadb-client
+              echo "Instalando mariadb-client..."
+              apk add --no-cache mariadb-client
+              
+              # Realizar backup con mariadb-dump
+              echo "Iniciando mariadb-dump..."
+              mariadb-dump \
+                -h mariadb.barriofarma.svc.cluster.local \
+                -u root \
+                -p${MYSQL_ROOT_PASSWORD} \
+                --all-databases \
+                --single-transaction \
+                --quick \
+                --lock-tables=false \
+                --routines \
+                --triggers \
+                --events \
+                --hex-blob | gzip > ${BACKUP_FILE}
+              
+              # Verificar que el backup se creó correctamente
+              if [ ! -f ${BACKUP_FILE} ]; then
+                echo "ERROR: Archivo de backup no se creó correctamente"
+                exit 1
+              fi
+              
+              BACKUP_SIZE=$(du -h ${BACKUP_FILE} | cut -f1)
+              echo "✅ Backup completado: ${BACKUP_FILE} (${BACKUP_SIZE})"
+              
+              # Subir a Cloud Storage
+              echo "Subiendo backup a Cloud Storage..."
+              gsutil cp ${BACKUP_FILE} ${BUCKET_PATH}/
+              
+              if [ $? -eq 0 ]; then
+                echo "✅ Backup subido exitosamente a ${BUCKET_PATH}/"
+              else
+                echo "ERROR: Fallo al subir backup a Cloud Storage"
+                exit 1
+              fi
+              
+              # Limpiar backups locales antiguos (mantener solo los últimos 3 días)
+              echo "Limpiando backups locales antiguos..."
+              find ${BACKUP_DIR} -name "backup-*.sql.gz" -mtime +3 -delete
+              
+              # Limpiar backups remotos antiguos (mantener últimos 7 días en dev, 30 en prod)
+              if [ "${ENVIRONMENT}" == "production" ]; then
+                RETENTION_DAYS=30
+              else
+                RETENTION_DAYS=7
+              fi
+              
+              echo "Limpiando backups remotos con retención de ${RETENTION_DAYS} días..."
+              # Alpine no soporta 'date -d', usamos date con formato diferente
+              CUTOFF_DATE=$(date -d "@$(($(date +%s) - ${RETENTION_DAYS} * 86400))" +%Y%m%d 2>/dev/null || date -u -r $(($(date +%s) - ${RETENTION_DAYS} * 86400)) +%Y%m%d)
+              
+              gsutil ls ${BUCKET_PATH}/ | while read backup_url; do
+                BACKUP_DATE=$(basename ${backup_url} | grep -oP 'backup-\K[0-9]{8}' || echo "")
+                if [ ! -z "${BACKUP_DATE}" ] && [ "${BACKUP_DATE}" -lt "${CUTOFF_DATE}" ]; then
+                  echo "Eliminando backup antiguo: ${backup_url}"
+                  gsutil rm ${backup_url} || true
+                fi
+              done
+              
+              echo "=========================================="
+              echo "Backup completado exitosamente"
+              echo "=========================================="
+              
+            env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: barriofarma-secrets
+                  key: DB_ROOT_PASSWORD
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: barriofarma-config
+                  key: ENVIRONMENT
+                  optional: true
+            - name: GCS_BUCKET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: barriofarma-config
+                  key: GCS_BUCKET_NAME
+                  optional: true
+            
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+            
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+          
+          volumes:
+          - name: backup-storage
+            emptyDir: {}
+          - name: tools
+            emptyDir: {}
+          
+          restartPolicy: OnFailure
+
+---
+# ServiceAccount para el CronJob de backups
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mariadb-backup-sa
+  namespace: barriofarma
+  labels:
+    app: mariadb
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: backup
+  annotations:
+    # Vincular con Workload Identity (GCP)
+    # iam.gke.io/gcp-service-account: mariadb-backup@PROJECT_ID.iam.gserviceaccount.com
+
+---
+# Role para acceso a recursos dentro del namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mariadb-backup-role
+  namespace: barriofarma
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding para vincular Role con ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mariadb-backup-rolebinding
+  namespace: barriofarma
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mariadb-backup-role
+subjects:
+- kind: ServiceAccount
+  name: mariadb-backup-sa
+  namespace: barriofarma
+
+

@@ -1,0 +1,377 @@
+# ============================================================================
+# Docker Compose Hybrid PoC - BarrioFarma
+# ============================================================================
+# Arquitectura:
+#   - Cloud SQL (GCP): Base de datos MySQL centralizada
+#   - Redis (Local): Cache y colas locales para baja latencia
+#   - Frappe/ERPNext (Local): Aplicacion completa
+# ============================================================================
+# Uso:
+#   1. Copiar .env.hybrid.example a .env.hybrid
+#   2. Configurar variables con IP de Cloud SQL
+#   3. Copiar certificados SSL a ./certs/
+#   4. docker compose -f docker-compose.hybrid-poc.yml --env-file .env.hybrid up
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # Redis Cache (LOCAL)
+  # ==========================================================================
+  redis-cache:
+    image: redis:7.2-alpine
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command: redis-server /etc/redis-cache.conf
+    volumes:
+      - redis-cache-data:/data
+      - ./config/redis-cache.conf:/etc/redis-cache.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # Redis Queue (LOCAL)
+  # ==========================================================================
+  redis-queue:
+    image: redis:7.2-alpine
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command: redis-server /etc/redis-queue.conf
+    volumes:
+      - redis-queue-data:/data
+      - ./config/redis-queue.conf:/etc/redis-queue.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # Configurator - Inicializa common_site_config.json
+  # ==========================================================================
+  configurator:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    user: "0"
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: none
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        mkdir -p sites/ssl_certs;
+        cp -f /certs/server-ca.pem sites/ssl_certs/ 2>/dev/null || true;
+        [ -f /certs/client-cert.pem ] && cp -f /certs/client-cert.pem sites/ssl_certs/;
+        [ -f /certs/client-key.pem ] && cp -f /certs/client-key.pem sites/ssl_certs/;
+        chown -R 1000:1000 /home/frappe/frappe-bench/sites;
+        runuser -u frappe -- bash -c '
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+        if [ -f sites/ssl_certs/server-ca.pem ]; then
+          bench set-config -g db_ssl_ca /home/frappe/frappe-bench/sites/ssl_certs/server-ca.pem;
+          [ -f sites/ssl_certs/client-cert.pem ] && bench set-config -g db_ssl_cert /home/frappe/frappe-bench/sites/ssl_certs/client-cert.pem;
+          [ -f sites/ssl_certs/client-key.pem ] && bench set-config -g db_ssl_key /home/frappe/frappe-bench/sites/ssl_certs/client-key.pem;
+        fi;
+        echo "Configurator completed - DB_HOST=$$DB_HOST";
+        ';
+    environment:
+      DB_HOST: "${CLOUD_SQL_IP:?Error: CLOUD_SQL_IP no definida}"
+      DB_PORT: "${DB_PORT:-3306}"
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: "9000"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./certs:/certs:ro
+
+  # ==========================================================================
+  # Create Site - Crea el sitio conectando a Cloud SQL
+  # ==========================================================================
+  create-site:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: none
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./certs:/certs:ro
+      - ./scripts/patch_mariadb_cloud_setup_db.py:/tmp/patch_mariadb_cloud_setup_db.py:ro
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        echo "Esperando BD en $$DB_HOST:$$DB_PORT...";
+        wait-for-it -t 120 $$DB_HOST:$$DB_PORT || { echo "ERROR: No se puede conectar a la BD"; exit 1; };
+        wait-for-it -t 30 redis-cache:6379;
+        wait-for-it -t 30 redis-queue:6379;
+        export start=`date +%s`;
+        until [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".db_host // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_cache // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_queue // empty"` ]];
+        do
+          echo "Waiting for sites/common_site_config.json to be created";
+          sleep 5;
+          if (( `date +%s`-start > 120 )); then
+            echo "could not find sites/common_site_config.json with required keys";
+            exit 1
+          fi
+        done;
+        echo "sites/common_site_config.json found";
+        echo "Creando sitio con Cloud SQL en $$DB_HOST...";
+        sed -i 's/ENGINE=MyISAM/ENGINE=InnoDB/' apps/frappe/frappe/database/mariadb/database.py || true;
+        python3 /tmp/patch_mariadb_cloud_setup_db.py;
+        if [ -n "$$MARIADB_CLOUD_USE_ROOT_FOR_SITE" ]; then
+          grep -q MARIADB_CLOUD_USE_ROOT_FOR_SITE apps/frappe/frappe/installer.py && echo "Parche installer: OK" || { echo "Parche installer: FALLO"; exit 1; };
+          grep -q 'conf.get.*db_user' apps/frappe/frappe/__init__.py && echo "Parche frappe connect: OK" || { echo "Parche frappe connect: FALLO"; exit 1; };
+          grep -q MARIADB_CLOUD_USE_ROOT_FOR_SITE apps/frappe/frappe/database/mariadb/setup_db.py && echo "Parche setup_db: OK" || { echo "Parche setup_db: FALLO"; exit 1; };
+        fi;
+        export SITE_DB_PASS="$${SITE_DB_PASSWORD:-$$(openssl rand -base64 24)}";
+        bench new-site --db-type mariadb \
+          --mariadb-user-host-login-scope='%' \
+          --admin-password=admin \
+          --db-root-username=$$DB_ROOT_USERNAME \
+          --db-root-password=$$DB_ROOT_PASSWORD \
+          --db-password "$$SITE_DB_PASS" \
+          --install-app erpnext \
+          --install-app barriofarma_app \
+          --set-default frontend;
+        bench --site frontend set-config host_name $${SITE_HOST:-localhost};
+        bench --site frontend set-config nginx_port 8080;
+        bench --site frontend clear-cache;
+        echo "Sitio creado exitosamente";
+    environment:
+      DB_HOST: ${CLOUD_SQL_IP}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_ROOT_USERNAME: ${CLOUD_SQL_USER:-root}
+      DB_ROOT_PASSWORD: ${CLOUD_SQL_PASSWORD:-bfdb123}
+      SITE_HOST: ${SITE_HOST:-localhost}
+      SITE_DB_PASSWORD: ${SITE_DB_PASSWORD:-}
+      MARIADB_CLOUD_USE_ROOT_FOR_SITE: ${MARIADB_CLOUD_USE_ROOT_FOR_SITE:-}
+
+  # ==========================================================================
+  # Backend - Servidor Gunicorn
+  # ==========================================================================
+  backend:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    networks:
+      - frappe_network
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./certs:/certs:ro
+      - ./scripts/patch_mariadb_cloud_setup_db.py:/tmp/patch_mariadb_cloud_setup_db.py:ro
+    entrypoint: ["bash", "-c", "[ -n \"$$MARIADB_CLOUD_USE_ROOT_FOR_SITE\" ] && python3 /tmp/patch_mariadb_cloud_setup_db.py; exec \"$$@\"", "_"]
+    command:
+      - /home/frappe/frappe-bench/env/bin/gunicorn
+      - --chdir=/home/frappe/frappe-bench/sites
+      - --bind=0.0.0.0:8000
+      - --threads=4
+      - --workers=2
+      - --worker-class=gthread
+      - --worker-tmp-dir=/dev/shm
+      - --timeout=120
+      - --preload
+      - frappe.app:application
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+      MARIADB_CLOUD_USE_ROOT_FOR_SITE: ${MARIADB_CLOUD_USE_ROOT_FOR_SITE:-}
+      # OpenTelemetry (opcional)
+      OTEL_SERVICE_NAME: barriofarma-backend-hybrid
+      OTEL_SERVICE_VERSION: 0.0.2-dev
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-H", "Host: frontend", "http://localhost:8000/api/method/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ==========================================================================
+  # Frontend - Nginx
+  # ==========================================================================
+  frontend:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    networks:
+      - frappe_network
+    depends_on:
+      - backend
+      - websocket
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      FRAPPE_SITE_NAME_HEADER: frontend
+      SOCKETIO: websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    ports:
+      - "${FRAPPE_PORT:-8080}:8080"
+
+  # ==========================================================================
+  # WebSocket - SocketIO
+  # ==========================================================================
+  websocket:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    networks:
+      - frappe_network
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./scripts/patch_mariadb_cloud_setup_db.py:/tmp/patch_mariadb_cloud_setup_db.py:ro
+    entrypoint: ["bash", "-c", "[ -n \"$$MARIADB_CLOUD_USE_ROOT_FOR_SITE\" ] && python3 /tmp/patch_mariadb_cloud_setup_db.py; exec \"$$@\"", "_"]
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+      MARIADB_CLOUD_USE_ROOT_FOR_SITE: ${MARIADB_CLOUD_USE_ROOT_FOR_SITE:-}
+
+  # ==========================================================================
+  # Scheduler - Tareas programadas
+  # ==========================================================================
+  scheduler:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    networks:
+      - frappe_network
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./scripts/patch_mariadb_cloud_setup_db.py:/tmp/patch_mariadb_cloud_setup_db.py:ro
+    entrypoint: ["bash", "-c", "[ -n \"$$MARIADB_CLOUD_USE_ROOT_FOR_SITE\" ] && python3 /tmp/patch_mariadb_cloud_setup_db.py; exec \"$$@\"", "_"]
+    command:
+      - bench
+      - schedule
+
+  # ==========================================================================
+  # Queue Workers
+  # ==========================================================================
+  queue-short:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    networks:
+      - frappe_network
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./scripts/patch_mariadb_cloud_setup_db.py:/tmp/patch_mariadb_cloud_setup_db.py:ro
+    entrypoint: ["bash", "-c", "[ -n \"$$MARIADB_CLOUD_USE_ROOT_FOR_SITE\" ] && python3 /tmp/patch_mariadb_cloud_setup_db.py; exec \"$$@\"", "_"]
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+      MARIADB_CLOUD_USE_ROOT_FOR_SITE: ${MARIADB_CLOUD_USE_ROOT_FOR_SITE:-}
+
+  queue-long:
+    image: ${FRAPPE_IMAGE:-bf-app-dev:0.0.2-dev}
+    networks:
+      - frappe_network
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./scripts/patch_mariadb_cloud_setup_db.py:/tmp/patch_mariadb_cloud_setup_db.py:ro
+    entrypoint: ["bash", "-c", "[ -n \"$$MARIADB_CLOUD_USE_ROOT_FOR_SITE\" ] && python3 /tmp/patch_mariadb_cloud_setup_db.py; exec \"$$@\"", "_"]
+    command:
+      - bench
+      - worker
+      - --queue
+      - long,default,short
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+      MARIADB_CLOUD_USE_ROOT_FOR_SITE: ${MARIADB_CLOUD_USE_ROOT_FOR_SITE:-}
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  redis-cache-data:
+  redis-queue-data:
+  sites:
+  logs:
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  frappe_network:
+    driver: bridge

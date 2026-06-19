@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barriofarma-frontend
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/version: "0.0.2-dev"
+spec:
+  replicas: 1  # Dev: 1 réplica, Production: escalar según carga
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: barriofarma
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/version: "0.0.2-dev"
+    spec:
+      initContainers:
+      # Verificar que el backend está accesible
+      - name: wait-for-backend
+        image: curlimages/curl:latest
+        command: ['sh', '-c', 'until curl -f -H "X-Frappe-Site-Name: frontend" http://barriofarma-backend-service:8000/api/method/ping; do echo waiting for backend; sleep 2; done;']
+      # Websocket check removido - Socket.IO no responde a HTTP GET simple
+      containers:
+      - name: frontend
+        image: gcr.io/barriofarma-dev/bf-app-dev:0.0.2-dev
+        imagePullPolicy: Always
+        command:
+        - nginx-entrypoint.sh
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: BACKEND
+          value: "barriofarma-backend-service:8000"
+        - name: FRAPPE_SITE_NAME_HEADER
+          valueFrom:
+            configMapKeyRef:
+              name: barriofarma-config
+              key: FRAPPE_SITE_NAME_HEADER
+        - name: SOCKETIO
+          value: "barriofarma-websocket-service:9000"
+        - name: UPSTREAM_REAL_IP_ADDRESS
+          value: "127.0.0.1"
+        - name: UPSTREAM_REAL_IP_HEADER
+          value: "X-Forwarded-For"
+        - name: UPSTREAM_REAL_IP_RECURSIVE
+          value: "off"
+        - name: PROXY_READ_TIMEOUT
+          value: "120"
+        - name: CLIENT_MAX_BODY_SIZE
+          value: "50m"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: sites-data
+          mountPath: /home/frappe/frappe-bench/sites
+        - name: logs-data
+          mountPath: /home/frappe/frappe-bench/logs
+      volumes:
+      - name: sites-data
+        persistentVolumeClaim:
+          claimName: barriofarma-sites-pvc
+      - name: logs-data
+        persistentVolumeClaim:
+          claimName: barriofarma-logs-pvc
+

@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mariadb-config
+  namespace: barriofarma
+  labels:
+    app: mariadb
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: database
+data:
+  # Configuración personalizada de MariaDB
+  # Este archivo se monta en /etc/mysql/conf.d/custom.cnf
+  custom.cnf: |
+    [mysqld]
+    # Character Set y Collation
+    character-set-server=utf8mb4
+    collation-server=utf8mb4_unicode_ci
+    
+    # InnoDB Configuration
+    innodb-log-file-size=512M
+    innodb-file-per-table=1
+    innodb-flush-log-at-trx-commit=1
+    innodb-buffer-pool-size=1G
+    
+    # Connections
+    max-connections=200
+    
+    # Query Cache (deshabilitado en MariaDB 10.5+)
+    # query_cache_size=0
+    # query_cache_type=0
+    
+    # Binlog (opcional para replicación)
+    # log-bin=mysql-bin
+    # binlog-format=ROW
+    # expire-logs-days=7
+    
+    # Slow Query Log (útil para debugging)
+    slow-query-log=1
+    slow-query-log-file=/var/lib/mysql/slow-query.log
+    long-query-time=2
+    
+    # Error Log
+    log-error=/var/lib/mysql/error.log
+    
+    # General Settings
+    skip-name-resolve=1
+    
+    [client]
+    default-character-set=utf8mb4
+
+

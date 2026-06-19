@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: barriofarma-config
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: config
+data:
+  # Frappe Configuration
+  FRAPPE_SITE_NAME: "frontend"
+  FRAPPE_SITE_NAME_HEADER: "frontend"
+  
+  # Redis Configuration
+  # Dev/Staging: Redis 7.x en GKE (Services locales)
+  # Production: Memorystore Redis (IPs privadas)
+  FRAPPE_REDIS_CACHE: "redis://redis-cache.barriofarma.svc.cluster.local:6379"
+  FRAPPE_REDIS_QUEUE: "redis://redis-queue.barriofarma.svc.cluster.local:6379"
+  
+  # Database Configuration
+  # Dev/Staging: MariaDB 11.8 en GKE (StatefulSet)
+  # Production: Cloud SQL MySQL 8.0 (managed service)
+  # 
+  # Para Dev/Staging, usar: mariadb.barriofarma.svc.cluster.local
+  # Para Production, actualizar con IP privada de: terraform output database_private_ip
+  DB_HOST: "mariadb.barriofarma.svc.cluster.local"
+  DB_PORT: "3306"
+  DB_TYPE: "mariadb"  # MariaDB 11.8 nativo en dev/staging
+  DB_NAME: "barriofarma"
+  
+  # Environment Configuration
+  ENVIRONMENT: "dev"  # Valores: dev, staging, production
+  
+  # Cloud Storage Configuration (para backups de MariaDB)
+  GCS_BUCKET_NAME: "barriofarma-dev-storage"
+  
+  # Observability Configuration
+  OTEL_SERVICE_NAME: "barriofarma-backend"
+  OTEL_SERVICE_VERSION: "0.0.2-dev"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  
+  # Logging Configuration
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  
+  # Metrics Configuration
+  METRICS_ENABLED: "true"
+  METRICS_PORT: "9090"

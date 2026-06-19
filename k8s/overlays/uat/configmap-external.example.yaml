@@ -1,0 +1,21 @@
+# Copia este archivo a configmap-external.yaml (no versionar) o generalo con:
+#   ../../scripts/prepare-uat-external-config.sh
+#
+# MariaDB fuera del cluster (VM / VPS). Redis en cluster: StatefulSets + Services
+# redis-cache / redis-queue en namespace barriofarma-uat (URLs cortas en el mismo namespace).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: barriofarma-config
+  namespace: barriofarma
+data:
+  DB_HOST: "REEMPLAZAR_HOST_O_IP_MARIADB"
+  DB_PORT: "3306"
+  DB_NAME: "barriofarma"
+  DB_TYPE: "mariadb"
+  FRAPPE_REDIS_CACHE: "redis://redis-cache:6379"
+  FRAPPE_REDIS_QUEUE: "redis://redis-queue:6379"
+  ENVIRONMENT: "uat"
+  OTEL_SERVICE_VERSION: "0.0.3-uat"
+  GCS_BUCKET_NAME: "REEMPLAZAR_BUCKET_UAT"

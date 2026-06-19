@@ -1,0 +1,402 @@
+{
+  "title": "Redis - Overview",
+  "tags": [
+    "redis",
+    "cache",
+    "queue",
+    "barriofarma"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 27,
+  "version": 1,
+  "refresh": "30s",
+  "uid": "redis-overview",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Hit Ratio (Cache)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(rate(redis_keyspace_hits_total{service=\"redis-cache\"}[5m]) / (rate(redis_keyspace_hits_total{service=\"redis-cache\"}[5m]) + rate(redis_keyspace_misses_total{service=\"redis-cache\"}[5m]))) * 100",
+          "legendFormat": "Hit Ratio",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "value": 0,
+              "color": "red"
+            },
+            {
+              "value": 80,
+              "color": "yellow"
+            },
+            {
+              "value": 95,
+              "color": "green"
+            }
+          ]
+        },
+        "unit": "percent"
+      },
+      "alert": {
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [80],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "execution": {
+          "alertConditions": [],
+          "actions": [],
+          "noDataState": "no_data",
+          "for": "5m"
+        },
+        "frequency": "10s",
+        "handler": 1,
+        "name": "Low Hit Ratio",
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Memory Used (Cache)",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "redis_memory_used_bytes{service=\"redis-cache\"}",
+          "legendFormat": "Memory Used",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+      "options": {
+        "min": 0,
+        "max": 536870912,
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "value": 0,
+              "color": "green"
+            },
+            {
+              "value": 429496729,
+              "color": "yellow"
+            },
+            {
+              "value": 483183820,
+              "color": "red"
+            }
+          ]
+        },
+        "unit": "bytes"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Connected Clients (Cache)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "redis_connected_clients{service=\"redis-cache\"}",
+          "legendFormat": "Clients",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "unit": "short"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Operations per Second (Cache)",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(redis_commands_processed_total{service=\"redis-cache\"}[1m])",
+          "legendFormat": "{{command}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "yaxes": [
+        {
+          "format": "ops",
+          "label": "Ops/sec"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Memory Usage Over Time (Cache)",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "redis_memory_used_bytes{service=\"redis-cache\"}",
+          "legendFormat": "Memory Used",
+          "refId": "A"
+        },
+        {
+          "expr": "redis_memory_max_bytes{service=\"redis-cache\"}",
+          "legendFormat": "Max Memory",
+          "refId": "B"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "yaxes": [
+        {
+          "format": "bytes",
+          "label": "Memory"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Command Latency (p95) - Cache",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(redis_commands_latencies_usec_bucket{service=\"redis-cache\"}[5m])) / 1000000",
+          "legendFormat": "{{command}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "yaxes": [
+        {
+          "format": "s",
+          "label": "Latency"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Keyspace Operations (Cache)",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(redis_keyspace_hits_total{service=\"redis-cache\"}[1m])",
+          "legendFormat": "Hits",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(redis_keyspace_misses_total{service=\"redis-cache\"}[1m])",
+          "legendFormat": "Misses",
+          "refId": "B"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "yaxes": [
+        {
+          "format": "ops",
+          "label": "Ops/sec"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Queue Length (Queue)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "redis_db_keys{service=\"redis-queue\"}",
+          "legendFormat": "Queue Length",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 22},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "unit": "short"
+      }
+    },
+    {
+      "id": 9,
+      "title": "Memory Used (Queue)",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "redis_memory_used_bytes{service=\"redis-queue\"}",
+          "legendFormat": "Memory Used",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 22},
+      "options": {
+        "min": 0,
+        "max": 268435456,
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "value": 0,
+              "color": "green"
+            },
+            {
+              "value": 214748364,
+              "color": "yellow"
+            },
+            {
+              "value": 241591910,
+              "color": "red"
+            }
+          ]
+        },
+        "unit": "bytes"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Connected Clients (Queue)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "redis_connected_clients{service=\"redis-queue\"}",
+          "legendFormat": "Clients",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 22},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "unit": "short"
+      }
+    },
+    {
+      "id": 11,
+      "title": "Operations per Second (Queue)",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(redis_commands_processed_total{service=\"redis-queue\"}[1m])",
+          "legendFormat": "{{command}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "yaxes": [
+        {
+          "format": "ops",
+          "label": "Ops/sec"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Memory Usage Over Time (Queue)",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "redis_memory_used_bytes{service=\"redis-queue\"}",
+          "legendFormat": "Memory Used",
+          "refId": "A"
+        },
+        {
+          "expr": "redis_memory_max_bytes{service=\"redis-queue\"}",
+          "legendFormat": "Max Memory",
+          "refId": "B"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "yaxes": [
+        {
+          "format": "bytes",
+          "label": "Memory"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": []
+}
+

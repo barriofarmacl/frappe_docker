@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mariadb
+  namespace: barriofarma
+  labels:
+    app: mariadb
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: database
+spec:
+  serviceName: mariadb
+  replicas: 1  # Para dev/staging, 1 réplica es suficiente
+  
+  selector:
+    matchLabels:
+      app: mariadb
+  
+  template:
+    metadata:
+      labels:
+        app: mariadb
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+      - name: mariadb
+        image: mariadb:11.8
+        ports:
+        - containerPort: 3306
+          name: mysql
+          protocol: TCP
+        
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: barriofarma-secrets
+              key: DB_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          value: "barriofarma"
+        - name: MYSQL_USER
+          value: "barriofarma"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: barriofarma-secrets
+              key: DB_PASSWORD
+        - name: MARIADB_AUTO_UPGRADE
+          value: "1"
+        
+        # Configuración de MariaDB (misma que docker-compose)
+        args:
+        - --character-set-server=utf8mb4
+        - --collation-server=utf8mb4_unicode_ci
+        - --skip-character-set-client-handshake
+        - --innodb-log-file-size=512M
+        - --innodb-file-per-table=1
+        - --innodb-flush-log-at-trx-commit=1
+        - --max-connections=200
+        - --innodb-buffer-pool-size=1G
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        
+        volumeMounts:
+        - name: mariadb-data
+          mountPath: /var/lib/mysql
+        - name: mariadb-config
+          mountPath: /etc/mysql/conf.d
+          readOnly: true
+        
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - mariadb-admin ping -h localhost -uroot -p$MYSQL_ROOT_PASSWORD
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - mariadb-admin ping -h localhost -uroot -p$MYSQL_ROOT_PASSWORD
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 1
+          failureThreshold: 3
+      
+      volumes:
+      - name: mariadb-config
+        configMap:
+          name: mariadb-config
+  
+  volumeClaimTemplates:
+  - metadata:
+      name: mariadb-data
+      labels:
+        app: mariadb
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "standard-rwo"  # Disco persistente estándar de GKE
+      resources:
+        requests:
+          storage: 20Gi  # 20GB para dev/staging
+
+

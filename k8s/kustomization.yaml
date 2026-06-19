@@ -1,0 +1,240 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: barriofarma
+  namespace: barriofarma
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - configmap-frappe-headers.yaml
+  - secret.yaml
+  - pvc.yaml
+  # Database (MariaDB 11.8 en GKE para dev/staging)
+  # En production, comentar estos recursos y usar Cloud SQL
+  - statefulset-mariadb.yaml
+  - configmap-mariadb.yaml
+  - cronjob-mariadb-backup.yaml
+  # Redis (Redis 7.x en GKE para dev/staging)
+  # En production, comentar y usar Memorystore Redis
+  - statefulset-redis-cache.yaml
+  - statefulset-redis-queue.yaml
+  # Jobs (deben ejecutarse antes de los deployments)
+  - job-configurator.yaml
+  - job-create-site.yaml
+  # Deployments
+  - deployment.yaml
+  - deployment-frontend.yaml
+  - deployment-websocket.yaml
+  - deployment-scheduler.yaml
+  - deployment-queue-short.yaml
+  - deployment-queue-long.yaml
+  # Services
+  - service.yaml
+  # Ingress
+  - ingress.yaml
+  # Monitoring (requiere Prometheus Operator - comentado por ahora)
+  # - servicemonitor.yaml
+  # Autoscaling (opcional, descomentar cuando esté listo)
+  # - hpa-backend.yaml
+  # - hpa-frontend.yaml
+  # - hpa-queue-short.yaml
+
+# commonLabels deshabilitado - causa conflictos con selectores de servicios
+# Las labels se aplican directamente en cada recurso
+# commonLabels:
+#   app.kubernetes.io/name: barriofarma
+#   app.kubernetes.io/version: "0.0.2-dev"
+#   app.kubernetes.io/managed-by: argocd
+
+images:
+  # Usar GCR directamente (sin transformación)
+  # La imagen debe estar en: gcr.io/barriofarma-dev/bf-app-dev:0.0.2-dev
+  - name: gcr.io/barriofarma-dev/bf-app-dev
+    newTag: 0.0.2-dev
+
+patchesStrategicMerge:
+  # Patch de node affinity para PVCs RWO compartidos
+  # DESHABILITADO para dev: 1 nodo elimina necesidad de nodeSelector
+  # Para staging/prod: usar RWX (Filestore) o servicios gestionados (Cloud SQL/Memorystore)
+  # - patch-node-affinity.yaml
+  # Patch de servicios de infraestructura para evitar que commonLabels rompan los selectores
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: mariadb
+      namespace: barriofarma
+    spec:
+      selector:
+        app: mariadb
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: redis-cache
+      namespace: barriofarma
+    spec:
+      selector:
+        app: redis-cache
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: redis-queue
+      namespace: barriofarma
+    spec:
+      selector:
+        app: redis-queue
+  # Patch de servicios de aplicación para evitar que commonLabels rompan los selectores
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: barriofarma-backend-service
+      namespace: barriofarma
+    spec:
+      selector:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: backend
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: barriofarma-frontend-service
+      namespace: barriofarma
+    spec:
+      selector:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: frontend
+  - |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: barriofarma-websocket-service
+      namespace: barriofarma
+    spec:
+      selector:
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: websocket
+  # Patch de recursos reducidos para dev (1 nodo con PVCs RWO)
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-backend
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backend
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+            readinessProbe:
+              httpGet:
+                path: /api/method/ping
+                port: 8000
+                httpHeaders:
+                - name: X-Frappe-Site-Name
+                  value: frontend
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-frontend
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          containers:
+          - name: frontend
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "50m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-websocket
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          containers:
+          - name: websocket
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-scheduler
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          containers:
+          - name: scheduler
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "50m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-queue-short
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          containers:
+          - name: queue-short
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: barriofarma-queue-long
+      namespace: barriofarma
+    spec:
+      template:
+        spec:
+          containers:
+          - name: queue-long
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"

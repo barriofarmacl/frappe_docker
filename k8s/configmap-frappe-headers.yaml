@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frappe-headers
+  namespace: barriofarma
+  labels:
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: config
+data:
+  # Header requerido por Frappe para identificar el site
+  X-Frappe-Site-Name: "frontend"
+  
+  # Headers de forwarding para que Frappe sepa el dominio original
+  X-Forwarded-For: "$remote_addr"
+  X-Forwarded-Proto: "$scheme"
+  X-Forwarded-Host: "$host"
+  X-Real-IP: "$remote_addr"
+  
+  # Header de host original
+  Host: "$host"
+

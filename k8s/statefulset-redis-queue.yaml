@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-queue
+  namespace: barriofarma
+  labels:
+    app: redis-queue
+    app.kubernetes.io/name: barriofarma
+    app.kubernetes.io/component: queue
+spec:
+  serviceName: redis-queue
+  replicas: 1  # Para dev/staging, 1 réplica es suficiente
+  
+  selector:
+    matchLabels:
+      app: redis-queue
+  
+  template:
+    metadata:
+      labels:
+        app: redis-queue
+        app.kubernetes.io/name: barriofarma
+        app.kubernetes.io/component: queue
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.4-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+          protocol: TCP
+        
+        # Configuración de Redis Queue sin eviction (desde Session 0030)
+        command:
+        - redis-server
+        args:
+        - --appendonly
+        - "yes"
+        - --appendfsync
+        - "always"
+        - --maxmemory
+        - "256mb"
+        - --maxmemory-policy
+        - "noeviction"
+        - --save
+        - "3600"
+        - "1"
+        
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+          failureThreshold: 3
+  
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+      labels:
+        app: redis-queue
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "standard-rwo"  # Disco persistente estándar de GKE
+      resources:
+        requests:
+          storage: 5Gi  # 5GB para queue en dev/staging
+

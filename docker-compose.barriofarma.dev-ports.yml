@@ -1,0 +1,9 @@
+# Opcional: publicar MariaDB y Nginx al host para desarrollo local (DBeaver, browser).
+# Uso: docker compose -f docker-compose.barriofarma.yml -f docker-compose.barriofarma.dev-ports.yml up -d
+services:
+  db:
+    ports:
+      - "3307:3306"
+  frontend:
+    ports:
+      - "8080:8080"
