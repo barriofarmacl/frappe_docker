@@ -19,7 +19,8 @@ Este directorio contiene las herramientas y configuración para el entorno de de
 El directorio `development/` vive **dentro** del fork `barriofarmacl/frappe_docker` (raíz del clon, p. ej. `/workspace`). Git sube desde aquí hasta esa raíz.
 
 - **`main`**: línea sincronizada con **`upstream/main`** (`frappe/frappe_docker`). Actualizar con `git fetch upstream` y merge (o rebase según política del equipo) desde `upstream/main`.
-- **`barriofarma/develop`** (u otra rama larga acordada): trabajo diario BarrioFarma (compose, `installer`, JSON de apps, `development/sii`, bump del submódulo `.cursor`). Integrar cambios de `main` periódicamente para no diverger de Frappe.
+- **`barriofarma/develop`**: rama larga de trabajo BarrioFarma (compose, `installer`, JSON de apps, `development/sii`, bump del submódulo `.cursor`, `k8s/`, `observability/`). Infra operativa consume esta rama via submodule (`barriofarmacl/barriofarma-infrastructure`).
+- **IaC cloud (Terraform/Ansible UAT):** no vive en este fork; ver [barriofarma-infrastructure](https://github.com/barriofarmacl/barriofarma-infrastructure) y ADR-003 en `docs/adr/003-frontera-fork-infra.md`.
 
 ## Guardar avances (orden recomendado)
 
@@ -31,7 +32,9 @@ Ejecutar en este orden antes de considerar la sesión cerrada en todos los repos
 | B | `frappe-bench/apps/barriofarma_app` | Igual. |
 | C | `development/.cursor` | Commit de OpenSpec/reglas; push al remoto del submódulo (`barriofarma-methodology`). |
 | D | Raíz del fork (`frappe_docker`) | Commit de cambios bajo `development/` permitidos por `.gitignore`, **incluido** el puntero al submódulo tras (C). |
-| E | Rama de trabajo | Push de `barriofarma/develop` (o la rama larga usada); abrir PR interno si aplica. |
+| E | Rama de trabajo | Push de `barriofarma/develop`; bump submodule en infra si cambio plataforma (`platform_ref`). |
+
+Ver contrato repos: `.github/REPOSITORY_STRUCTURE.md` y `.github/BRANCHING_STRATEGY.md`.
 
 ## Repos satélite
 
