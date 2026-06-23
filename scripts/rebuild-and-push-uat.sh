@@ -9,7 +9,7 @@
 set -e
 
 PROJECT_ID="barriofarma-uat-cl"
-IMAGE_NAME="bf-app-uat"
+IMAGE_NAME="${IMAGE_NAME_OVERRIDE:-bf-app-uat}"
 IMAGE_TAG="${1:-0.0.4-uat}"
 REGISTRY="gcr.io"
 FULL_IMAGE_NAME="${REGISTRY}/${PROJECT_ID}/${IMAGE_NAME}:${IMAGE_TAG}"
