@@ -5,10 +5,10 @@
   },
   {
     "url": "https://github.com/barriofarmacl/barriofarma_app.git",
-    "branch": "v0.0.12"
+    "branch": "v0.0.15"
   },
   {
     "url": "https://github.com/barriofarmacl/pagosbf.git",
-    "branch": "v0.1.1"
+    "branch": "v0.1.2"
   }
 ]
