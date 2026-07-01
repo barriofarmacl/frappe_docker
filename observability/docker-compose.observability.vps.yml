@@ -1,0 +1,116 @@
+# Override VPS — puertos no estandar, red externa Compose, servicios extra
+# Uso: docker compose -f docker-compose.observability.yml -f docker-compose.observability.vps.yml --env-file .env.observability up -d
+#
+# Acceso operador via IAP TCP forwarding (conecta a IP interna VM, NO a 127.0.0.1):
+#   Grafana     host:13000  (firewall solo 35.235.240.0/20)
+#   Prometheus  host:19090
+#   Loki        host:13100
+#
+# Alternativa sin firewall extra: SSH -L 13000:127.0.0.1:13000 (ver runbook)
+#
+# !override reemplaza puertos del compose base (3000, 9090 en 0.0.0.0)
+
+services:
+  otel-collector:
+    ports: !override
+      - "14317:4317"
+      - "14318:4318"
+      - "18889:8889"
+
+  prometheus:
+    ports: !override
+      - "19090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.vps.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.vps.yml:/etc/prometheus/prometheus.vps.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    ports: !override
+      - "13000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://127.0.0.1:13000}
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      GF_ALERTING_ENABLED: "false"
+
+  loki:
+    ports: !override
+      - "13100:3100"
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: barriofarma-node-exporter
+    networks:
+      - observability_network
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+      - "--collector.textfile.directory=/textfile"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - ./node-exporter/textfile:/textfile:ro
+    ports:
+      - "9100:9100"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  cadvisor:
+    # v0.54.1+ required for Docker 29.x overlayfs (see google/cadvisor#3860)
+    image: gcr.io/cadvisor/cadvisor:v0.54.1
+    container_name: barriofarma-cadvisor
+    networks:
+      - observability_network
+    command:
+      - "--housekeeping_interval=15s"
+      - "--docker_only=true"
+      - "--store_container_labels=true"
+      - "--disable_metrics=disk"
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8081:8080"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: barriofarma-blackbox-exporter
+    networks:
+      - observability_network
+    command:
+      - "--config.file=/etc/blackbox/blackbox.yml"
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    ports:
+      - "9115:9115"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+networks:
+  frappe_network:
+    external: true
+    name: ${OBS_FRAPPE_NETWORK}

@@ -1,0 +1,89 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'barriofarma-uat'
+    environment: 'uat'
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Backend /metrics — deshabilitado hasta activacion explicita
+  # - job_name: 'barriofarma-backend'
+  #   ...
+
+  - job_name: otel-collector
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['otel-collector:8889']
+        labels:
+          service: otel-collector
+          component: observability
+
+  - job_name: prometheus
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: mariadb
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['mariadb-exporter:9104']
+        labels:
+          service: mariadb
+          component: database
+          instance: barriofarma-db
+
+  - job_name: redis-cache
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['redis-exporter-cache:9121']
+        labels:
+          service: redis-cache
+          component: cache
+          instance: barriofarma-redis-cache
+
+  - job_name: redis-queue
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['redis-exporter-queue:9121']
+        labels:
+          service: redis-queue
+          component: queue
+          instance: barriofarma-redis-queue
+
+  - job_name: node
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: node-exporter
+          component: host
+
+  - job_name: cadvisor
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: cadvisor
+          component: containers
+
+  - job_name: blackbox-http
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://uat.barriofarma.cl/api/method/ping
+        labels:
+          service: barriofarma-ping
+          component: availability
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

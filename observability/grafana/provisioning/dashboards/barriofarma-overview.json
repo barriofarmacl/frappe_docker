@@ -1,18 +1,26 @@
 {
   "title": "BarrioFarma - Overview",
+  "uid": "barriofarma-overview",
   "tags": [
     "barriofarma",
-    "overview"
+    "overview",
+    "vps",
+    "node-exporter"
   ],
   "timezone": "browser",
   "schemaVersion": 27,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "title": "Request Rate",
       "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "rate(http_requests_total[5m])",
@@ -20,17 +28,15 @@
           "refId": "A"
         }
       ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      }
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "yaxes": [{ "format": "reqps" }, { "format": "short" }],
+      "xaxis": { "mode": "time" }
     },
     {
       "id": 2,
       "title": "Error Rate",
       "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "rate(http_requests_total{status_code=~\"5..\"}[5m])",
@@ -38,17 +44,15 @@
           "refId": "A"
         }
       ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      }
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "yaxes": [{ "format": "reqps" }, { "format": "short" }],
+      "xaxis": { "mode": "time" }
     },
     {
       "id": 3,
       "title": "Response Time (p95)",
       "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
@@ -56,17 +60,15 @@
           "refId": "A"
         }
       ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      }
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "yaxes": [{ "format": "s" }, { "format": "short" }],
+      "xaxis": { "mode": "time" }
     },
     {
       "id": 4,
       "title": "Redis Hit Ratio",
       "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
           "expr": "rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]))",
@@ -74,14 +76,151 @@
           "refId": "A"
         }
       ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      }
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "yaxes": [{ "format": "percentunit", "min": 0, "max": 1 }, { "format": "short" }],
+      "xaxis": { "mode": "time" }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "VPS Host (node_exporter)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "collapsed": false
+    },
+    {
+      "id": 6,
+      "title": "CPU uso VPS (%)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{job=\"node\", mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "CPU %",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+      "yaxes": [
+        { "format": "percent", "label": "CPU", "min": 0, "max": 100 },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" },
+      "thresholds": [
+        { "value": 80, "colorMode": "critical", "op": "gt" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Memoria VPS (%)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * (1 - (node_memory_MemAvailable_bytes{job=\"node\"} / node_memory_MemTotal_bytes{job=\"node\"}))",
+          "legendFormat": "Memoria usada %",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
+      "yaxes": [
+        { "format": "percent", "label": "RAM", "min": 0, "max": 100 },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" }
+    },
+    {
+      "id": 8,
+      "title": "Disco VPS — uso por mount (%)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * (1 - (node_filesystem_avail_bytes{job=\"node\", fstype!~\"tmpfs|overlay|squashfs|fuse.*\", mountpoint!~\"/boot.*\"} / node_filesystem_size_bytes{job=\"node\", fstype!~\"tmpfs|overlay|squashfs|fuse.*\", mountpoint!~\"/boot.*\"}))",
+          "legendFormat": "{{mountpoint}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+      "yaxes": [
+        { "format": "percent", "label": "Disco", "min": 0, "max": 100 },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" }
+    },
+    {
+      "id": 9,
+      "title": "Memoria VPS (bytes)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "node_memory_MemTotal_bytes{job=\"node\"} - node_memory_MemAvailable_bytes{job=\"node\"}",
+          "legendFormat": "Usada",
+          "refId": "A"
+        },
+        {
+          "expr": "node_memory_MemAvailable_bytes{job=\"node\"}",
+          "legendFormat": "Disponible",
+          "refId": "B"
+        },
+        {
+          "expr": "node_memory_MemTotal_bytes{job=\"node\"}",
+          "legendFormat": "Total",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+      "yaxes": [{ "format": "bytes" }, { "format": "short" }],
+      "xaxis": { "mode": "time" },
+      "legend": { "show": true, "alignAsTable": true, "avg": true, "current": true, "max": true }
+    },
+    {
+      "id": 10,
+      "title": "Disco VPS — espacio libre (bytes)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "node_filesystem_avail_bytes{job=\"node\", fstype!~\"tmpfs|overlay|squashfs|fuse.*\", mountpoint!~\"/boot.*\"}",
+          "legendFormat": "{{mountpoint}} libre",
+          "refId": "A"
+        },
+        {
+          "expr": "node_filesystem_size_bytes{job=\"node\", fstype!~\"tmpfs|overlay|squashfs|fuse.*\", mountpoint!~\"/boot.*\"}",
+          "legendFormat": "{{mountpoint}} total",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+      "yaxes": [{ "format": "bytes" }, { "format": "short" }],
+      "xaxis": { "mode": "time" },
+      "legend": { "show": true, "alignAsTable": true, "current": true }
+    },
+    {
+      "id": 11,
+      "title": "Load average VPS",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "node_load1{job=\"node\"}",
+          "legendFormat": "load1",
+          "refId": "A"
+        },
+        {
+          "expr": "node_load5{job=\"node\"}",
+          "legendFormat": "load5",
+          "refId": "B"
+        },
+        {
+          "expr": "node_load15{job=\"node\"}",
+          "legendFormat": "load15",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 33 },
+      "yaxes": [{ "format": "short", "label": "load" }, { "format": "short" }],
+      "xaxis": { "mode": "time" }
     }
-  ],
-  "id": null,
-  "uid": "barriofarma-overview"
+  ]
 }

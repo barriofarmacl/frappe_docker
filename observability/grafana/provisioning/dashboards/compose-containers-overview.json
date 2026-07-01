@@ -1,0 +1,287 @@
+{
+  "title": "Compose - Contenedores (cAdvisor)",
+  "uid": "compose-containers-overview",
+  "tags": [
+    "docker",
+    "compose",
+    "cadvisor",
+    "containers",
+    "barriofarma"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 27,
+  "version": 2,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "compose_project",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(container_memory_usage_bytes{job=\"cadvisor\", container_label_com_docker_compose_project!=\"\"}, container_label_com_docker_compose_project)",
+        "query": {
+          "query": "label_values(container_memory_usage_bytes{job=\"cadvisor\", container_label_com_docker_compose_project!=\"\"}, container_label_com_docker_compose_project)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "barriofarma-uat",
+          "value": "barriofarma-uat"
+        }
+      },
+      {
+        "name": "compose_service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(container_memory_usage_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service!=\"\"}, container_label_com_docker_compose_service)",
+        "query": {
+          "query": "label_values(container_memory_usage_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service!=\"\"}, container_label_com_docker_compose_service)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Servicios UP",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(compose_container_up{project=~\"$compose_project\", compose_service=~\"$compose_service\"} == 1)",
+          "legendFormat": "UP",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            { "color": "red", "value": null },
+            { "color": "green", "value": 1 }
+          ]
+        }
+      },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 2,
+      "title": "Servicios DOWN",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(compose_container_up{project=~\"$compose_project\", compose_service=~\"$compose_service\"} == 0) or vector(0)",
+          "legendFormat": "DOWN",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ]
+        }
+      },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 3,
+      "title": "Restarts acumulados (max)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "max(compose_container_restarts_total{project=~\"$compose_project\", compose_service=~\"$compose_service\"})",
+          "legendFormat": "restarts",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 3 }
+          ]
+        }
+      },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 4,
+      "title": "Contenedores monitoreados (cAdvisor)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(count by (container_label_com_docker_compose_service) (container_memory_usage_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service=~\"$compose_service\", container_label_com_docker_compose_service!=\"\"}))",
+          "legendFormat": "containers",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 5,
+      "title": "Memoria por servicio",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service=~\"$compose_service\", container_label_com_docker_compose_service!=\"\"}",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "yaxes": [
+        { "format": "bytes", "label": "RSS" },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" },
+      "legend": { "show": true, "alignAsTable": true, "avg": true, "current": true, "max": true }
+    },
+    {
+      "id": 6,
+      "title": "CPU por servicio (cores)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service=~\"$compose_service\", container_label_com_docker_compose_service!=\"\"}[5m]))",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "yaxes": [
+        { "format": "short", "label": "cores" },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" },
+      "legend": { "show": true, "alignAsTable": true, "avg": true, "current": true, "max": true }
+    },
+    {
+      "id": 7,
+      "title": "Red RX por servicio",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_network_receive_bytes_total{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service=~\"$compose_service\", container_label_com_docker_compose_service!=\"\"}[5m]))",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "yaxes": [
+        { "format": "Bps", "label": "RX" },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" }
+    },
+    {
+      "id": 8,
+      "title": "Red TX por servicio",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_network_transmit_bytes_total{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service=~\"$compose_service\", container_label_com_docker_compose_service!=\"\"}[5m]))",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "yaxes": [
+        { "format": "Bps", "label": "TX" },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" }
+    },
+    {
+      "id": 9,
+      "title": "Memoria vs limit (% — solo si limit definido)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * container_memory_usage_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service=~\"$compose_service\", container_label_com_docker_compose_service!=\"\"} / container_spec_memory_limit_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=~\"$compose_project\", container_label_com_docker_compose_service=~\"$compose_service\", container_label_com_docker_compose_service!=\"\"} > 0",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "yaxes": [
+        { "format": "percent", "label": "% limit", "max": 100, "min": 0 },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" },
+      "nullPointMode": "null as zero"
+    },
+    {
+      "id": 10,
+      "title": "Estado Compose (textfile)",
+      "type": "graph",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "compose_container_up{project=~\"$compose_project\", compose_service=~\"$compose_service\"}",
+          "legendFormat": "{{compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
+      "yaxes": [
+        { "format": "short", "label": "up", "max": 1, "min": 0 },
+        { "format": "short" }
+      ],
+      "xaxis": { "mode": "time" },
+      "seriesOverrides": [
+        { "alias": "/.*/", "linewidth": 2, "steppedLine": true }
+      ]
+    }
+  ]
+}
