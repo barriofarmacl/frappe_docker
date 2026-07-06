@@ -2,7 +2,8 @@
   "platform_version": "1.0.0",
   "product_name": "BarrioFarma Platform",
   "description": "GA ERPNext 16 — farmacia POS, boleta SII, perfiles UAT 2.0",
-  "status": "uat_signed_off_pending_prod_deploy",
+  "status": "prod_operational_ga_partial",
+  "prod_go_live_date": "2026-06-23",
   "uat_sign_off_date": "2026-06-23",
   "epic": "https://github.com/barriofarmacl/whiteboard/issues/66",
   "go_live_checklist": "https://github.com/barriofarmacl/whiteboard/issues/71",
@@ -27,7 +28,7 @@
   },
   "images": {
     "uat": "gcr.io/barriofarma-uat-cl/bf-app-uat:0.0.15-uat-v16",
-    "prod": "gcr.io/barriofarma-uat-cl/bf-app-prod:0.0.15-prod-v16"
+    "prod": "gcr.io/barriofarmadigital/bf-app-prod:0.0.15-prod-v16"
   },
   "manifests": {
     "uat": "apps-uat-v16.json",
