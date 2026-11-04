@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Engram CLI + optional seed import for devcontainer.
-# Bind-mount ~/.engram from WSL host (see devcontainer.json) so MCP on host
-# and engram CLI inside the container share the same SQLite store.
+# Engram CLI for the devcontainer. SQLite lives on the named volume engram-data.
+# Cloud replication is opt-in via ENGRAM_CLOUD_* (see devcontainer-example/engram-cloud.env.example).
+# JSON backup import is manual (scripts/restore-engram-backup.sh); default ENGRAM_RESTORE=never.
 set -euo pipefail
 
 ENGRAM_DATA_DIR="${ENGRAM_DATA_DIR:-/home/frappe/.engram}"
-ENGRAM_PROJECT="${ENGRAM_PROJECT:-barriofarmacl}"
-ENGRAM_VERSION="${ENGRAM_VERSION:-1.16.1}"
+ENGRAM_PROJECT="${ENGRAM_PROJECT:-barriofarma}"
+ENGRAM_VERSION="${ENGRAM_VERSION:-1.20.0}"
 # auto: import backup only when DB missing or empty; never: skip; always: force import
-ENGRAM_RESTORE="${ENGRAM_RESTORE:-auto}"
+# Shared host mount (devcontainer): default never — set ENGRAM_RESTORE=auto|always only for empty/local DBs.
+ENGRAM_RESTORE="${ENGRAM_RESTORE:-never}"
 ENGRAM_BACKUP="${ENGRAM_BACKUP:-/workspace/development/barriofarma-engram-backup.json}"
 ENGRAM_BIN_DIR="${HOME}/.local/bin"
-ENGRAM_MCP_CWD="${ENGRAM_MCP_CWD:-/workspace}"
+ENGRAM_MCP_CWD="${ENGRAM_MCP_CWD:-/workspace/development}"
 CURSOR_MCP_JSON="${CURSOR_MCP_JSON:-${HOME}/.cursor/mcp.json}"
 
 log() {
@@ -100,6 +101,20 @@ write_cursor_mcp_config() {
 
   mkdir -p "$(dirname "${CURSOR_MCP_JSON}")"
 
+  local cloud_env=""
+  if [ -n "${ENGRAM_CLOUD_SERVER:-}" ]; then
+    cloud_env="${cloud_env}
+        \"ENGRAM_CLOUD_SERVER\": \"${ENGRAM_CLOUD_SERVER}\","
+  fi
+  if [ -n "${ENGRAM_CLOUD_TOKEN:-}" ]; then
+    cloud_env="${cloud_env}
+        \"ENGRAM_CLOUD_TOKEN\": \"${ENGRAM_CLOUD_TOKEN}\","
+  fi
+  if [ "${ENGRAM_CLOUD_AUTOSYNC:-}" = "1" ]; then
+    cloud_env="${cloud_env}
+        \"ENGRAM_CLOUD_AUTOSYNC\": \"1\","
+  fi
+
   log "writing Cursor MCP config: ${CURSOR_MCP_JSON}"
   cat > "${CURSOR_MCP_JSON}" <<EOF
 {
@@ -108,7 +123,7 @@ write_cursor_mcp_config() {
       "command": "${engram_bin}",
       "args": ["mcp", "--tools=agent"],
       "cwd": "${ENGRAM_MCP_CWD}",
-      "env": {
+      "env": {${cloud_env}
         "ENGRAM_DATA_DIR": "${ENGRAM_DATA_DIR}",
         "ENGRAM_PROJECT": "${ENGRAM_PROJECT}"
       }
@@ -129,7 +144,7 @@ main() {
 
   log "ENGRAM_DATA_DIR=${ENGRAM_DATA_DIR}"
   log "ENGRAM_PROJECT=${ENGRAM_PROJECT}"
-  log "Do not run engram mcp on WSL host and devcontainer at the same time (same SQLite mount)."
+  log "Container SQLite is independent from the host. Share memory with Engram Cloud, not a bind mount."
 
   write_cursor_mcp_config
   import_backup_if_needed
