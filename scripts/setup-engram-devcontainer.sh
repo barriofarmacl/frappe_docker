@@ -6,7 +6,7 @@ set -euo pipefail
 
 ENGRAM_DATA_DIR="${ENGRAM_DATA_DIR:-/home/frappe/.engram}"
 ENGRAM_PROJECT="${ENGRAM_PROJECT:-barriofarma}"
-ENGRAM_VERSION="${ENGRAM_VERSION:-1.20.0}"
+ENGRAM_VERSION="${ENGRAM_VERSION:-3.7.2}"
 # auto: import backup only when DB missing or empty; never: skip; always: force import
 # Shared host mount (devcontainer): default never — set ENGRAM_RESTORE=auto|always only for empty/local DBs.
 ENGRAM_RESTORE="${ENGRAM_RESTORE:-never}"
@@ -30,8 +30,13 @@ install_engram_binary() {
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "${tmp_dir}"' RETURN
 
+  case "$(uname -m)" in
+    arm64|aarch64) engram_arch="arm64" ;;
+    *) engram_arch="amd64" ;;
+  esac
+
   curl -fsSL \
-    "https://github.com/Gentleman-Programming/engram/releases/download/v${ENGRAM_VERSION}/engram_${ENGRAM_VERSION}_linux_amd64.tar.gz" \
+    "https://github.com/Gentleman-Programming/engram/releases/download/v${ENGRAM_VERSION}/engram_${ENGRAM_VERSION}_linux_${engram_arch}.tar.gz" \
     | tar xz -C "${tmp_dir}" engram
 
   install -m 0755 "${tmp_dir}/engram" "${ENGRAM_BIN_DIR}/engram"
