@@ -2,6 +2,12 @@
   "name": "Frappe Bench",
   "forwardPorts": [8000, 9000, 6787],
   "remoteUser": "frappe",
+  "postCreateCommand": "bash /workspace/.devcontainer/post-create.sh",
+  "remoteEnv": {
+    "ENGRAM_DATA_DIR": "/home/frappe/.engram",
+    "ENGRAM_PROJECT": "barriofarma",
+    "PATH": "/home/frappe/.local/bin:${containerEnv:PATH}"
+  },
   "customizations": {
     "vscode": {
       "extensions": [

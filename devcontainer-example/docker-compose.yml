@@ -49,8 +49,17 @@ services:
     command: sleep infinity
     environment:
       - SHELL=/bin/bash
+      # SQLite local del contenedor (volumen engram-data). Cloud sync via engram-cloud.env.
+      - ENGRAM_DATA_DIR=/home/frappe/.engram
+      - ENGRAM_PROJECT=barriofarma
+    env_file:
+      - path: ./engram-cloud.env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ..:/workspace:cached
+      - engram-data:/home/frappe/.engram
       # Enable if you require git cloning
       # - ${HOME}/.ssh:/home/frappe/.ssh
     working_dir: /workspace/development
@@ -86,5 +95,6 @@ services:
   #   network_mode: "host"
 volumes:
   mariadb-data:
+  engram-data:
   #postgresql-data:
   #mailpit-data:
